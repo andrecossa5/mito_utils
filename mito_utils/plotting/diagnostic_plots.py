@@ -5,9 +5,9 @@ Utils and plotting functions to visualize and inspect SNVs from a MAESTER experi
 import gc
 from itertools import product
 
-from MI_TO.plotting_base import *
-from MI_TO.preprocessing import *
-from MI_TO.utils import *
+from ..preprocessing.preprocessing import *
+from ..utils.utils import *
+from .plotting_base import *
 
 
 ##
@@ -561,3 +561,6 @@ def viz_clone_variants(afm, clone_name, sample=None, path=None, filtering=None,
     fig.suptitle(f'{clone_name} clone features')
 
     return fig
+
+
+

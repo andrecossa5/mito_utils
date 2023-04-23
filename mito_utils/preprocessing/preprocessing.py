@@ -26,7 +26,7 @@ filtering_options = [
     'seurat', 
     'pegasus', 
     'MQuad', 
-    'DADApy',
+    #'DADApy',
     'density'
 ]
 
@@ -68,7 +68,7 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
     """
 
     # Add labels to .obs
-    if with_clones:
+    if with_clones and cbc_gbc_df is not None:
         A.obs = A.obs.join(cbc_gbc_df)
         A.obs['GBC'] = pd.Categorical(A.obs['GBC'])
     # add A fw counts to layers
@@ -122,15 +122,16 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
 ##
 
 
-def read_one_sample(path_main, sample=None, input_mode='less_stringent'):
+def read_one_sample(path_main, sample=None):
     """
     Read and format one sample AFM.
     """
-    A = sc.read(path_main + f'data/AFMs/{sample}_afm_{input_mode}.h5ad')
-    cbc_gbc_df = pd.read_csv(path_main + f'data/CBC_GBC_cells/CBC_GBC_{sample}.csv', index_col=0)
-    barcodes = pd.read_csv(path_main + f'data/barcodes/{sample}_barcodes.csv', index_col=0)
+    A = sc.read(path_main + f'data/AFMs/{sample}/AFM.h5ad')
+    cbc_gbc_df = pd.read_csv(path_main + f'data/clones_dfs/{sample}/cells_summary_table.csv', index_col=0)
+    barcodes = pd.read_csv(path_main + f'data/barcodes/{sample}/barcodes.txt', index_col=0)
     
-    # Filter cells passing transcriptional QC (barcodes) and confidently assigned to a single GBC clone
+    # Filter cells passing transcriptional QC (barcodes) and confidently assigned 
+    # to a single GBC clone
     valid_cbcs = list(
         set(cbc_gbc_df.index.to_list()) \
         & set(A.obs_names.to_list()) \
@@ -150,13 +151,13 @@ def read_one_sample(path_main, sample=None, input_mode='less_stringent'):
 ##
 
 
-def read_all_samples(path_main, sample_list=None, input_mode='less_stringent'):
+def read_all_samples(path_main, sample_list=None):
     """
     Read and format all samples AFMs. 
     """
     ORIG = {}
     for sample in sample_list:
-        orig = sc.read(path_main + f'data/AFMs/{sample}_afm_{input_mode}.h5ad')
+        orig = sc.read(path_main + f'data/AFMs/{sample}/AFM.h5ad')
         orig.obs = orig.obs.assign(sample=sample)
         ORIG[sample] = orig
         meta_vars = orig.var
@@ -171,11 +172,11 @@ def read_all_samples(path_main, sample_list=None, input_mode='less_stringent'):
 ##
 
 
-def create_blacklist_table(path_main, sample_list=['MDA', 'AML', 'PDX']):
+def create_blacklist_table(path_main):
     """
     Creates a summary stat table to exclude further variants, common to more samples.
     """
-    afm = read_all_samples(path_main, sample_list=sample_list)
+    afm = read_all_samples(path_main)
     DFs = []
     for x in afm.obs['sample'].unique():
         cells = afm.obs.query('sample == @x').index
@@ -245,7 +246,7 @@ def remove_excluded_sites(afm):
 ##
 
 
-def remove_from_blacklist(variants, df, sample='MDA'):
+def remove_from_blacklist(variants, df, sample='MDA_clones'):
     """
     Remove variants share by other samples.
     """
@@ -277,9 +278,11 @@ def filter_baseline(afm):
         index=afm.uns['per_position_coverage'].columns
     )
     sites = test_sites[test_sites].index
-    test_vars_site_coverage = afm.var_names.map(
-        lambda x: x.split('_')[0] in sites).to_numpy(dtype=bool)
-
+    test_vars_site_coverage = (
+        afm.var_names
+        .map(lambda x: x.split('_')[0] in sites)
+        .to_numpy(dtype=bool)
+    )
     # Test 2-4: 
     # variants with quality > 20 (mean, over all cells); 
     # variants seen in at least 3 cells;
@@ -528,12 +531,12 @@ def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
 ##
 
 
-def filter_DADApy(afm, ):
+def filter_DADApy(afm):
     """
     Filter using DADApy.
     """
 
-    return filtered
+    return 'Not implemented yet...'
 
 
 ##
@@ -545,7 +548,7 @@ def filter_density(afm, density=0.5, steps=np.Inf):
     adopted by Moravec et al., 2022.
     """
     # Get AF matrix, convert into a df
-    logger = logging.getLogger("my_logger")
+    logger = logging.getLogger("mito_benchmark")
     X_bool = np.where(~np.isnan(afm.X), 1, 0)
 
     # Check initial density not already above the target one
@@ -598,7 +601,7 @@ def filter_cells_and_vars(
     """
     Filter cells and vars from an afm.
     """ 
-    logger = logging.getLogger("my_logger")
+    logger = logging.getLogger("mito_benchmark")
     logger.info(f'Filter cells and variants for the original AFM...')
 
     if filtering in filtering_options and filtering != 'density':
@@ -638,7 +641,7 @@ def filter_cells_and_vars(
         elif filtering == 'MQuad':
             a = filter_Mquad(a_cells, nproc=nproc, path_=path_)
         elif filtering == 'DADApy':
-            a = filter_DADApy(a_cells,...)
+            a = filter_DADApy(a_cells)
 
     elif filtering == 'density':
         a_cells = filter_cells_coverage(afm, mean_coverage=min_cov_treshold)
@@ -672,9 +675,46 @@ def filter_cells_and_vars(
         a = a_cells[:, variants].copy()
     
     else:
-        raise ValueError(f'The provided filtering method {filtering} is not supported. Choose another one...')
+        raise ValueError(
+                    f'''The provided filtering method {filtering} is not supported.
+                        Choose another one...'''
+                )
 
     logger.info(f'Filtered feature matrix contains {a.shape[0]} cells and {a.shape[1]} variants.')
 
     return a_cells, a
 
+
+##
+
+
+
+def summary_stats_vars(afm, variants=None):
+    """
+    Calculate the most important summary stats for a bunch of variants, collected for
+    a set of cells.
+    """
+    if variants is not None:
+        test = afm.var_names.isin(variants)
+        density = (~np.isnan(afm[:, test].X)).sum(axis=0) / afm.shape[0]
+        median_vafs = np.nanmedian(afm[:, test].X, axis=0)
+        median_coverage_var = np.nanmedian(afm[:, test].layers['coverage'], axis=0)
+        fr_positives = np.sum(afm[:, test].X > 0, axis=0) / afm.shape[0]
+        var_names = afm.var_names[test]
+    else:
+        density = (~np.isnan(afm.X)).sum(axis=0) / afm.shape[0]
+        median_vafs = np.nanmedian(afm.X, axis=0)
+        median_coverage_var = np.nanmedian(afm.layers['coverage'], axis=0)
+        fr_positives = np.sum(afm.X > 0, axis=0) / afm.shape[0]
+        var_names = afm.var_names
+
+    df = pd.DataFrame(
+        {   
+            'density' : density,
+            'median_coverage' : median_coverage_var,
+            'median_AF' : median_vafs,
+            'fr_positives' : fr_positives
+        }, index=var_names
+    )
+
+    return df

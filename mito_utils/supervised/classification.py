@@ -14,7 +14,13 @@ from sklearn.model_selection import StratifiedShuffleSplit, RandomizedSearchCV
 from sklearn.metrics import *
 
 from hyperopt import tpe, hp
-from hpsklearn import HyperoptEstimator, k_neighbors_classifier, standard_scaler, logistic_regression, lightgbm_classification
+from hpsklearn import (
+                            HyperoptEstimator, 
+                            k_neighbors_classifier, 
+                            standard_scaler, 
+                            logistic_regression, 
+                            lightgbm_classification
+                        )
 
 
 ##
