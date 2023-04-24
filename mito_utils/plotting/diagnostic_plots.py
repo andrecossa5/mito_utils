@@ -387,6 +387,39 @@ def positive_events_by_var_type(afm, orig, ax=None, color=None, title=None):
 ##
 
 
+
+def MT_coverage_polar(afm, ax=None, title=None):
+    """
+    Plot log10 nUMIs coverare across MT-genome positions.
+    """
+    x = np.log10(np.mean(afm.uns['per_position_coverage'].values, axis=0))
+    mean_cov = x.mean()
+    theta = np.linspace(0, 2*np.pi, len(x))
+    mean_to_annotate = np.mean(afm.uns['per_position_coverage'].values, axis=0).mean()
+
+    ticks = [ 
+        int(round(x)) \
+        for x in np.linspace(1, afm.uns['per_position_coverage'].shape[1], 8) 
+    ][:7]
+
+    if title is None:
+        t = 'MT-genome coverage'
+    else:
+        t = f'{title} (mean={mean_to_annotate:.2f})'
+
+    ax.plot(theta, x)
+    ax.plot(theta, [ mean_cov for x in theta ], 'r--')
+    ax.set_theta_offset(np.pi/2)
+    ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
+    ax.set_xticklabels(ticks)
+    ax.set(xlabel='Position', title=t)
+
+    return ax
+
+
+##
+
+
 def viz_clone_variants(afm, clone_name, sample=None, path=None, filtering=None, 
     min_cell_number=None, min_cov_treshold=None, model=None, figsize=(12, 10)):
     """

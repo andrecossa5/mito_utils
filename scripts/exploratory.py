@@ -110,6 +110,13 @@ fig.savefig(os.path.join(path_results, 'mean_variances_trend.png'))
 
 ##############
 
+# Fancy coverage plot
+fig, axs = plt.subplots(1,n,figsize=(5*n,5), 
+                    subplot_kw={'projection': 'polar'}, constrained_layout=True)
 
+for i, x in enumerate(samples):
+    MT_coverage_polar(AFMs[x], ax=axs[i], title=x)
+fig.suptitle('MT-genome coverage')
+fig.savefig(os.path.join(path_results, 'MT_coverage.png'))
 
-
+##############
