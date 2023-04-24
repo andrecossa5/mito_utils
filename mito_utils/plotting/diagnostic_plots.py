@@ -6,7 +6,7 @@ import gc
 from itertools import product
 
 from ..preprocessing.preprocessing import *
-from ..utils.utils import *
+from ..utils.helpers import *
 from .plotting_base import *
 
 
@@ -21,44 +21,18 @@ def sturges(x):
 ##
 
 
-def cell_depth_dist(afm, ax=None, color='b', title=None):
-    """
-    Cell depth distribution plot.
-    """
-    hist(afm.obs, 'depth', n=sturges(afm.obs['depth']), ax=ax, c=color)
-
-    if title is None:
-        t = 'MASTER library cell depth (nUMIs)'
-    else:
-        t = title
-    format_ax(ax=ax, title=t, xlabel='total nUMIs', ylabel='n cells')
-
-    median = np.median(afm.obs['depth'])
-    r = (afm.obs['depth'].min(), afm.obs['depth'].max())
-    ax.text(0.5, 0.9, f'Median: {median:.2f}', transform=ax.transAxes)
-    ax.text(0.5, 0.85, f'Min-max: {r[0]:.2f}-{r[1]:.2f}', transform=ax.transAxes)
-    ax.text(0.5, 0.8, f'Total cells: {afm.shape[0]}', transform=ax.transAxes)
-
-    return ax
-
-
-##
-
-
 def cell_n_sites_covered_dist(afm, ax=None, color='b', title=None):
     """
     n covered positions/total position. Cell distribution.
     """
-
     df_ = pd.DataFrame(
         np.sum(afm.uns['per_position_coverage'] > 0, axis=1), 
         columns=['n']
     )
-
     hist(df_, 'n', n=sturges(df_['n']), ax=ax, c=color)
 
     if title is None:
-        t = 'n covered sites (total=16569), per cell'
+        t = 'n covered sites (total=16569), across cell'
     else:
         t = title
     format_ax(ax=ax, title=t, xlabel='n sites covered', ylabel='n cells')
@@ -79,11 +53,10 @@ def cell_n_vars_detected_dist(afm, ax=None, color='b', title=None):
     n covered variants. Cell distribution.
     """
     df_ = pd.DataFrame(np.sum(afm.X > 0, axis=1), columns=['n'])
-
     hist(df_, 'n', n=sturges(df_['n']), ax=ax, c=color)
 
     if title is None:
-        t = 'n detected variants (total=16569*3), per cell'
+        t = 'n detected variants (total=16569*3), across cell'
     else:
         t = title
     format_ax(ax=ax, title=t, xlabel='n variants detected', ylabel='n cells')
@@ -99,17 +72,19 @@ def cell_n_vars_detected_dist(afm, ax=None, color='b', title=None):
 ##
 
 
-def cell_median_site_quality_dist(afm, ax=None, color='b', title=None):
+def mean_site_quality_cell_dist(afm, ax=None, color='b', title=None):
     """
-    Median base quality per cell distribution.
+    Mean base quality per site, distribution across cells.
     """
-    df_ = pd.Series(np.nanmedian(afm.uns['per_position_quality'], axis=1)).to_frame(
-        ).rename(columns={0:'qual'})
-
+    df_ = (
+        pd.Series(np.nanmean(afm.uns['per_position_quality'], axis=1))
+        .to_frame()
+        .rename(columns={0:'qual'})
+    )
     hist(df_, 'qual', n=sturges(df_['qual']), ax=ax, c=color)
 
     if title is None:
-        t = 'Median base quality, per cell'
+        t = 'Mean site quality, across cell'
     else:
         t = title
     format_ax(ax=ax, title=t, xlabel='Phred score', ylabel='n cells')
@@ -127,17 +102,19 @@ def cell_median_site_quality_dist(afm, ax=None, color='b', title=None):
 
 
 # Site level diagnostics
-def site_median_coverage_dist(afm, ax=None, color='b', title=None):
+def mean_position_coverage_dist(afm, ax=None, color='b', title=None):
     """
     Median site coverage across cells, distribution.
     """
-    df_ = pd.Series(np.median(afm.uns['per_position_coverage'], axis=0)).to_frame(
-        ).rename(columns={0:'cov'})
-
+    df_ = (
+        pd.Series(np.mean(afm.uns['per_position_coverage'], axis=0))
+        .to_frame()
+        .rename(columns={0:'cov'})
+    )
     hist(df_, 'cov', n=sturges(df_['cov']), ax=ax, c=color)
 
     if title is None:
-        t = 'Median (across cells) MT sites (total=16569) coverage (nUMIs)'
+        t = 'Mean (across cells) position coverage (nUMIs)'
     else:
         t = title
     format_ax(ax=ax, title=t, xlabel='total nUMIs', ylabel='n sites')
@@ -145,8 +122,10 @@ def site_median_coverage_dist(afm, ax=None, color='b', title=None):
     ax.set_xlim((-50, 800))
     median = round(np.median(df_['cov']))
     r = (df_['cov'].min(), df_['cov'].max())
-    ax.text(0.5, 0.9, f'Median: {median}', transform=ax.transAxes)
-    ax.text(0.5, 0.85, f'Min-max: {r[0]}-{r[1]}', transform=ax.transAxes)
+    ax.text(0.5, 0.9, f'Median: {median:.2f}', transform=ax.transAxes)
+    ax.text(0.5, 0.85, f'Min-max: {r[0]:.2f}-{r[1]:.2f}', transform=ax.transAxes)
+    ax.text(0.5, 0.8, f'Total positions: {afm.uns["per_position_coverage"].shape[1]}', 
+        transform=ax.transAxes)
 
     return ax
 
@@ -154,17 +133,19 @@ def site_median_coverage_dist(afm, ax=None, color='b', title=None):
 ##
 
 
-def site_median_quality_dist(afm, ax=None, color='b', title=None):
+def mean_position_quality_dist(afm, ax=None, color='b', title=None):
     """
     Median site quality across cells, distribution.
     """
-    df_ = pd.Series(np.nanmedian(afm.uns['per_position_quality'], axis=0)).to_frame(
-        ).rename(columns={0:'qual'})
-
+    df_ = (
+        pd.Series(np.mean(afm.uns['per_position_quality'], axis=0))
+        .to_frame()
+        .rename(columns={0:'qual'})
+    )
     hist(df_, 'qual', n=sturges(df_['qual']), ax=ax, c=color)
 
     if title is None:
-        t = 'MASTER library median quality, per site'
+        t = 'Mean (across cells) position quality'
     else:
         t = title
     format_ax(ax=ax, title=t, xlabel='Phred score', ylabel='n sites')
@@ -173,6 +154,8 @@ def site_median_quality_dist(afm, ax=None, color='b', title=None):
     r = (df_['qual'].min(), df_['qual'].max())
     ax.text(0.08, 0.9, f'Median: {median:.2f}', transform=ax.transAxes)
     ax.text(0.08, 0.85, f'Min-max: {r[0]:.2f}-{r[1]:.2f}', transform=ax.transAxes)
+    ax.text(0.08, 0.8, f'Total positions: {afm.uns["per_position_coverage"].shape[1]}', 
+        transform=ax.transAxes)
 
     return ax
 

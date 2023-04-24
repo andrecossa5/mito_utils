@@ -39,20 +39,22 @@ def create_one_base_tables(A, base, only_variants=True):
     Create a full cell x variant AFM from the original maegatk output, and one of the 4 bases,
     create the allelic frequency df for that base, a cell x {i}_{ref}>{base} table.
     """
+    # base = 'A'
     cov = A.layers[f'{base}_counts_fw'].A + A.layers[f'{base}_counts_rev'].A
     X = cov / A.layers['coverage'].A
     q = A.layers[f'{base}_qual_fw'].A + A.layers[f'{base}_qual_rev'].A
     m = np.where(A.layers[f'{base}_qual_fw'].A > 0, 1, 0) + np.where(A.layers[f'{base}_qual_rev'].A > 0, 1, 0)
     qual = q / m
 
-    variant_names = [ f'{i}_{ref}>{base}' for i, ref in enumerate(A.var['refAllele'].values) ]
+    A.var['wt_allele'] = A.var['wt_allele'].str.capitalize()
+    variant_names = A.var.index + '_' + A.var['wt_allele'] + f'>{base}'
     df_cov = pd.DataFrame(cov, index=A.obs_names, columns=variant_names)
     df_x = pd.DataFrame(X, index=A.obs_names, columns=variant_names)
     df_qual = pd.DataFrame(qual, index=A.obs_names, columns=variant_names)
     gc.collect()
 
     if only_variants:
-        test = (A.var['refAllele'] != base).values
+        test = (A.var['wt_allele'] != base).values
         return df_cov.loc[:, test], df_x.loc[:, test], df_qual.loc[:, test]
     else:
         return df_cov, df_x, df_qual
@@ -69,10 +71,7 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
 
     # Add labels to .obs
     if with_clones and cbc_gbc_df is not None:
-        A.obs = A.obs.join(cbc_gbc_df)
-        A.obs['GBC'] = pd.Categorical(A.obs['GBC'])
-    # add A fw counts to layers
-    A.layers['A_counts_fw'] = A.X
+        A.obs['GBC'] = pd.Categorical(cbc_gbc_df['GBC'])
 
     # For each position and cell, compute each base AF and quality tables
     A_cov, A_x, A_qual = create_one_base_tables(A, 'A')
@@ -109,11 +108,10 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
     afm.layers['quality'] = qual
 
     # Per site slots, in 'uns'. Each matrix is a ncells x nsites matrix
-    sites = [ str(i) for i in range(A.shape[1]) ]
     afm.uns['per_position_coverage'] = pd.DataFrame(
-        A.layers['coverage'].A, index=afm.obs_names, columns=sites
+        A.layers['coverage'].A, index=afm.obs_names, columns=A.var_names
     )
-    afm.uns['per_position_quality'] = pd.DataFrame(quality, index=afm.obs_names, columns=sites)
+    afm.uns['per_position_quality'] = pd.DataFrame(quality, index=afm.obs_names, columns=A.var_names)
     gc.collect()
     
     return afm
@@ -122,26 +120,30 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
 ##
 
 
-def read_one_sample(path_main, sample=None):
+def read_one_sample(path_data, sample=None):
     """
     Read and format one sample AFM.
     """
-    A = sc.read(path_main + f'data/AFMs/{sample}/AFM.h5ad')
-    cbc_gbc_df = pd.read_csv(path_main + f'data/clones_dfs/{sample}/cells_summary_table.csv', index_col=0)
-    barcodes = pd.read_csv(path_main + f'data/barcodes/{sample}/barcodes.txt', index_col=0)
-    
+    A = sc.read(os.path.join(path_data, sample, 'AFM.h5ad'))
+    barcodes = pd.read_csv(os.path.join(path_data, sample, 'barcodes.txt'), index_col=0)
+    cbc_gbc_df = pd.read_csv(
+                    os.path.join(path_data, sample, 'cells_summary_table.csv'), 
+                    index_col=0
+                )
+
     # Filter cells passing transcriptional QC (barcodes) and confidently assigned 
     # to a single GBC clone
     valid_cbcs = list(
-        set(cbc_gbc_df.index.to_list()) \
-        & set(A.obs_names.to_list()) \
-        & set(barcodes.iloc[:,0].to_list())
+          set(cbc_gbc_df.index) \
+        & set(A.obs_names) \
+        & set(barcodes.index)
     )
  
     A = A[valid_cbcs, :].copy()
     cbc_gbc_df = cbc_gbc_df.loc[valid_cbcs, :]
     
     # Format
+    A.layers['coverage'] = A.layers['cov']
     afm = format_matrix(A, cbc_gbc_df)
     afm.obs = afm.obs.assign(sample=sample)
 
@@ -151,13 +153,13 @@ def read_one_sample(path_main, sample=None):
 ##
 
 
-def read_all_samples(path_main, sample_list=None):
+def read_all_samples(path_data, sample_list=None):
     """
     Read and format all samples AFMs. 
     """
     ORIG = {}
     for sample in sample_list:
-        orig = sc.read(path_main + f'data/AFMs/{sample}/AFM.h5ad')
+        orig = sc.read(os.path.join(path_data, sample, 'AFM.h5ad'))
         orig.obs = orig.obs.assign(sample=sample)
         ORIG[sample] = orig
         meta_vars = orig.var
