@@ -125,7 +125,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
             refit=True,
             n_jobs=cores_GS,
             cv=StratifiedShuffleSplit(n_splits=5),
-            early_stopping=True,
+            early_stopping=False,
             max_iters=n_combos
         )
         model.fit(X_train, y_train)
