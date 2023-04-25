@@ -407,7 +407,7 @@ def MT_coverage_polar(afm, ax=None, title=None):
     else:
         t = f'{title} (mean={mean_to_annotate:.2f})'
 
-    ax.plot(theta, x)
+    ax.plot(theta, x, '-', linewidth=0.8)
     ax.plot(theta, [ mean_cov for x in theta ], 'r--')
     ax.set_theta_offset(np.pi/2)
     ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
@@ -415,6 +415,43 @@ def MT_coverage_polar(afm, ax=None, title=None):
     ax.set(xlabel='Position', title=t)
 
     return ax
+
+
+##
+
+
+
+def MT_coverage_by_gene_polar(afm, df_mt, ax=None, title='Gene coverage'):
+    """
+    Plot log10 nUMIs coverare across MT-genome positions.
+    """
+
+    df_mt = df_mt.sort_values('start')
+    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
+
+    theta = np.linspace(0, 2*np.pi, len(x))
+    ticks = df_mt['start'] + ((df_mt['end']-df_mt['start'])/2)
+    ticks = (ticks - ticks.min()) / (ticks.max() - ticks.min())
+    ticks = ticks * 2 * np.pi
+
+    colors = { k:v for k,v in zip(df_mt.index, sc.pl.palettes.default_102[:df_mt.shape[0]])}
+
+    idx = np.arange(1,x.size+1)
+    for gene in colors:
+        start, stop = df_mt.loc[gene, ['start', 'end']].values
+        test = (idx>=start) & (idx<=stop)
+        ax.plot(theta[test], np.log10(x[test]), color=colors[gene], linewidth=1)
+
+    ax.set_theta_offset(np.pi/2)
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(df_mt.index)
+    ax.xaxis.set_tick_params(labelsize=5)
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+    ax.set_title(title)
+
+    return ax
+
 
 
 ##
