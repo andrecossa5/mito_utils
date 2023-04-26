@@ -387,15 +387,13 @@ def positive_events_by_var_type(afm, orig, ax=None, color=None, title=None):
 ##
 
 
-
 def MT_coverage_polar(afm, ax=None, title=None):
     """
     Plot log10 nUMIs coverare across MT-genome positions.
     """
-    x = np.log10(np.mean(afm.uns['per_position_coverage'].values, axis=0))
-    mean_cov = x.mean()
+    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
+    mean_x = x.mean()
     theta = np.linspace(0, 2*np.pi, len(x))
-    mean_to_annotate = np.mean(afm.uns['per_position_coverage'].values, axis=0).mean()
 
     ticks = [ 
         int(round(x)) \
@@ -405,10 +403,10 @@ def MT_coverage_polar(afm, ax=None, title=None):
     if title is None:
         t = 'MT-genome coverage'
     else:
-        t = f'{title} (mean={mean_to_annotate:.2f})'
+        t = f'{title} (mean={mean_x:.2f})'
 
-    ax.plot(theta, x, '-', linewidth=0.8)
-    ax.plot(theta, [ mean_cov for x in theta ], 'r--')
+    ax.plot(theta, np.log10(x), '-', linewidth=0.8)
+    ax.plot(theta, [ np.log10(mean_x) for _ in theta ], 'r--')
     ax.set_theta_offset(np.pi/2)
     ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
     ax.set_xticklabels(ticks)
@@ -418,7 +416,6 @@ def MT_coverage_polar(afm, ax=None, title=None):
 
 
 ##
-
 
 
 def MT_coverage_by_gene_polar(afm, df_mt, ax=None, title='Gene coverage'):
@@ -451,7 +448,6 @@ def MT_coverage_by_gene_polar(afm, df_mt, ax=None, title='Gene coverage'):
     ax.set_title(title)
 
     return ax
-
 
 
 ##
