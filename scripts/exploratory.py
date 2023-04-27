@@ -5,12 +5,12 @@ Exploratory analysis and checks on the three original and formatted AFMs.
 import os
 import sys
 import scanpy as sc
-from mito_utils.utils.helpers import Timer
-from mito_utils.plotting.plotting_base import *
-from mito_utils.plotting.colors import *
-from mito_utils.preprocessing.preprocessing import *
-from mito_utils.plotting.diagnostic_plots import *
-from mito_utils.plotting.heatmaps_plots import *
+from mito_utils.utils import Timer
+from mito_utils.plotting_base import *
+from mito_utils.colors import *
+from mito_utils.preprocessing import *
+from mito_utils.diagnostic_plots import *
+from mito_utils.heatmaps_plots import *
 
 
 ##

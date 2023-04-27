@@ -16,7 +16,7 @@ import seaborn as sns
 from statannotations.Annotator import Annotator 
 import textalloc as ta
 
-from ..utils.helpers import *
+from .utils import *
 from .colors import *
 plt.style.use('default')
 

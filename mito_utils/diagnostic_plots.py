@@ -5,8 +5,8 @@ Utils and plotting functions to visualize and inspect SNVs from a MAESTER experi
 import gc
 from itertools import product
 
-from ..preprocessing.preprocessing import *
-from ..utils.helpers import *
+from .preprocessing import *
+from .utils import *
 from .plotting_base import *
 
 

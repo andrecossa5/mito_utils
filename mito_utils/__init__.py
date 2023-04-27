@@ -1,1 +1,5 @@
-from . import dimred, distances, kNN, plotting, preprocessing, supervised, unsupervised, utils
+from . import (
+                classification, clustering, colors, diagnostic_plots,
+                dimred, distances, heatmaps_plots, kNN, plotting_base, 
+                preprocessing, utils
+)
