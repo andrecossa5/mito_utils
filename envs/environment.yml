@@ -24,6 +24,9 @@ dependencies:
   - pip
   - python-annoy
   - ipykernel
+  - pigz
+  - samtools
+  - cellsnp-lite
   - pip:
     - pandas
     - pegasusio==0.7.1 
@@ -34,5 +37,5 @@ dependencies:
     - textalloc
     - zarr==2.14.2 
     - fbpca
-    - hyperopt
-    - git+https://github.com/hyperopt/hyperopt-sklearn
+    - pysam
+    - dnaio
