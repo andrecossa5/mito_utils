@@ -81,8 +81,6 @@ dependencies:
       - fbpca==1.0
       - grpcio==1.54.0
       - hnswlib==0.7.0
-      - hpsklearn==1.0.3
-      - hyperopt==0.2.7
       - loompy==3.0.7
       - mquad==0.1.6
       - numpy-groupies==0.9.20
