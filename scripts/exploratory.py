@@ -15,7 +15,7 @@ from mito_utils.heatmaps_plots import *
 
 ##
 
-# path_main = '/Users/IEO5505/Desktop/example_mito_exploratory'
+# path_main = '/Users/IEO5505/Desktop/example_mito'
 # n=2
 # matplotlib.use('macOSX')
 # afm = AFMs['AML_clones']

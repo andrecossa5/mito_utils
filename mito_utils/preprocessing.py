@@ -63,7 +63,7 @@ def create_one_base_tables(A, base, only_variants=True):
 ##
 
 
-def format_matrix(A, cbc_gbc_df=None, with_clones=True):
+def format_matrix(A, cbc_gbc_df=None, with_clones=True, only_variants=True):
     """
     Create a full cell x variant AFM from the original maegatk output. 
     Add lentiviral clones' labels to resulting .obs.
@@ -74,16 +74,15 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
         A.obs['GBC'] = pd.Categorical(cbc_gbc_df['GBC'])
 
     # For each position and cell, compute each base AF and quality tables
-    A_cov, A_x, A_qual = create_one_base_tables(A, 'A')
-    C_cov, C_x, C_qual = create_one_base_tables(A, 'C')
-    T_cov, T_x, T_qual = create_one_base_tables(A, 'T')
-    G_cov, G_x, G_qual = create_one_base_tables(A, 'G')
+    A_cov, A_x, A_qual = create_one_base_tables(A, 'A', only_variants=only_variants)
+    C_cov, C_x, C_qual = create_one_base_tables(A, 'C', only_variants=only_variants)
+    T_cov, T_x, T_qual = create_one_base_tables(A, 'T', only_variants=only_variants)
+    G_cov, G_x, G_qual = create_one_base_tables(A, 'G', only_variants=only_variants)
 
     # Concat all of them in three complete coverage, AF and quality matrices, for each variant from the ref
     cov = pd.concat([A_cov, C_cov, T_cov, G_cov], axis=1)
     X = pd.concat([A_x, C_x, T_x, G_x], axis=1)
     qual = pd.concat([A_qual, C_qual, T_qual, G_qual], axis=1)
-    assert (cov.shape[1] % 3 == 1) and (X.shape[1] % 3 == 1) and (qual.shape[1] % 3 == 1) # Check dimensions
 
     # Reorder columns...
     variants = X.columns.map(lambda x: x.split('_')[0]).astype('int').values
@@ -111,7 +110,9 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
     afm.uns['per_position_coverage'] = pd.DataFrame(
         A.layers['coverage'].A, index=afm.obs_names, columns=A.var_names
     )
-    afm.uns['per_position_quality'] = pd.DataFrame(quality, index=afm.obs_names, columns=A.var_names)
+    afm.uns['per_position_quality'] = pd.DataFrame(
+        quality, index=afm.obs_names, columns=A.var_names
+    )
     gc.collect()
     
     return afm
@@ -120,7 +121,7 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True):
 ##
 
 
-def read_one_sample(path_data, sample=None):
+def read_one_sample(path_data, sample=None, only_variants=True):
     """
     Read and format one sample AFM.
     """
@@ -144,7 +145,7 @@ def read_one_sample(path_data, sample=None):
     
     # Format
     A.layers['coverage'] = A.layers['cov']
-    afm = format_matrix(A, cbc_gbc_df)
+    afm = format_matrix(A, cbc_gbc_df, only_variants=only_variants)
     afm.obs = afm.obs.assign(sample=sample)
 
     return afm

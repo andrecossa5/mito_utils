@@ -357,8 +357,7 @@ def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None, annot_si
 ##
 
 
-
-def box(df, x, y, by=None, c=None, a=1, l=None, ax=None, with_stats=False, 
+def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
     pairs=None, order=None, kwargs={}):
     """
     Base box plot.
@@ -374,13 +373,12 @@ def box(df, x, y, by=None, c=None, a=1, l=None, ax=None, with_stats=False,
 
     params = update_params(params, kwargs)
     
-    if isinstance(c, str):
+    if isinstance(c, str) and by is None:
         ax = sns.boxplot(data=df, x=x, y=y, color=c, ax=ax, saturation=0.7, order=order, **params) 
         ax.set(xlabel='')
 
     elif isinstance(c, dict) and by is None:
         if all([ True if k in df[x].unique() else False for k in c.keys() ]):
-
             ax = sns.boxplot(data=df, x=x, y=y, palette=c.values(), ax=ax, saturation=0.7, order=order, **params)
             ax.set(xlabel='')
         else:
@@ -388,12 +386,15 @@ def box(df, x, y, by=None, c=None, a=1, l=None, ax=None, with_stats=False,
             
     elif isinstance(c, dict) and by is not None:
         if all([ True if k in df[by].unique() else False for k in c.keys() ]):
-            ax = sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, width=s,
-                ax=ax, saturation=a, **params)
+            ax = sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, ax=ax, saturation=0.7, **params)
             ax.legend([], [], frameon=False)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
+    elif isinstance(c, str) and by is not None:
+        ax = sns.boxplot(data=df, x=x, y=y, hue=by, ax=ax, saturation=0.7, **params)
+        ax.legend([], [], frameon=False)
+        ax.set(xlabel='')
 
     if with_stats:
         add_wilcox(df, x, y, pairs, ax, order=order)
@@ -409,6 +410,8 @@ def strip(df, x, y, by=None, c=None, a=1, l=None, s=5, ax=None, with_stats=False
     """
     Base stripplot.
     """
+    np.random.seed(123)
+    
     if isinstance(c, str):
         ax = sns.stripplot(data=df, x=x, y=y, color=c, ax=ax, size=s, order=order) 
         ax.set(xlabel='')
@@ -426,8 +429,7 @@ def strip(df, x, y, by=None, c=None, a=1, l=None, s=5, ax=None, with_stats=False
             
     elif isinstance(c, dict) and by is not None:
         if all([ True if k in df[by].unique() else False for k in c.keys() ]):
-            ax = sns.stripplot(data=df, x=x, y=y, palette=c.values(), hue=by, 
-                ax=ax, size=s)
+            ax = sns.stripplot(data=df, x=x, y=y, palette=c.values(), hue=by, ax=ax, size=s, order=order)
             ax.legend([], [], frameon=False)
             ax.set(xlabel='')    
         else:
@@ -612,3 +614,51 @@ def rank_plot(df, cov=None, ascending=False, n_annotated=25, title=None, ylabel=
 #     conn = connectivities[s][conn_name]
 # 
 #     return X, conn, cells, true_clones, labels, ARI, d_run
+
+
+##
+
+
+def bb_plot(df, cov1=None, cov2=None, show_y=True, legend=True, colors=None, 
+    ax=None, with_data=False, **kwargs):
+    """
+    Stacked percentage plot.
+    """
+    # Prep data
+    df[cov1] = pd.Categorical(df[cov1]).remove_unused_categories()
+    df[cov2] = pd.Categorical(df[cov2]).remove_unused_categories()
+    data = pd.crosstab(df[cov1], df[cov2], normalize='index')
+    data_cum = data.cumsum(axis=1)
+    ys = data.index.categories
+    labels = data.columns.categories
+
+    # Ax
+    if colors is None:
+        colors = create_palette(df, cov2, palette='tab10')
+
+    for i, x in enumerate(labels):
+        widths = data.values[:,i]
+        starts = data_cum.values[:,i] - widths
+        ax.barh(ys, widths, left=starts, height=0.95, label=x, color=colors[x])
+
+    # Format
+    ax.set_xlim(-0.01, 1.01)
+    format_ax(
+        ax, 
+        title = f'{cov1} by {cov2}',
+        yticks='' if not show_y else ys, 
+        xlabel='Frequency %'
+    )
+
+    if legend:
+        add_legend(label=cov2, colors=colors, ax=ax, only_top=10, ncols=1,
+            loc='upper left', bbox_to_anchor=(1.01,1), ticks_size=7  
+        )
+    
+    if with_data:
+        return ax, data
+    else:
+        return ax
+    
+
+##
