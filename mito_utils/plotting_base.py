@@ -320,13 +320,14 @@ def hist(df, x, n=10, by=None, c='r', a=1, l=None, ax=None, density=False):
 ##
 
 
-def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None, annot_size=10):
+def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None, 
+    edgecolor=None, annot_size=10):
     """
     Basic bar plot.
     """
     if isinstance(c, str) and by is None:
         x = np.arange(df[y].size)
-        ax.bar(x, df[y], align='center', width=s, alpha=a, color=c)
+        ax.bar(x, df[y], align='center', width=s, alpha=a, color=c, edgecolor=edgecolor)
         ax.bar_label(ax.containers[0], padding=0, size=annot_size)
 
     elif by is not None and x is None and isinstance(c, dict):
@@ -338,7 +339,8 @@ def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None, annot_si
                 height = df[y].values
                 idx = [ i for i, x in enumerate(df[by]) if x == cat ]
                 height = df[y].values[idx]
-                ax.bar(x[idx], height, align='center', width=s, alpha=a, color=c[cat])
+                ax.bar(x[idx], height, align='center', width=s, alpha=a, 
+                    color=c[cat], edgecolor=edgecolor)
                 ax.bar_label(ax.containers[i], padding=0, size=annot_size)
 
     elif by is not None and x is not None and isinstance(c, dict):
@@ -358,7 +360,7 @@ def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None, annot_si
 
 
 def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
-    pairs=None, order=None, kwargs={}):
+    pairs=None, order=None, hue_order=None, kwargs={}):
     """
     Base box plot.
     """
@@ -374,25 +376,25 @@ def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
     params = update_params(params, kwargs)
     
     if isinstance(c, str) and by is None:
-        ax = sns.boxplot(data=df, x=x, y=y, color=c, ax=ax, saturation=0.7, order=order, **params) 
+        sns.boxplot(data=df, x=x, y=y, color=c, ax=ax, saturation=0.7, order=order, **params) 
         ax.set(xlabel='')
 
     elif isinstance(c, dict) and by is None:
         if all([ True if k in df[x].unique() else False for k in c.keys() ]):
-            ax = sns.boxplot(data=df, x=x, y=y, palette=c.values(), ax=ax, saturation=0.7, order=order, **params)
+            sns.boxplot(data=df, x=x, y=y, palette=c.values(), ax=ax, saturation=0.7, order=order, **params)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
             
     elif isinstance(c, dict) and by is not None:
         if all([ True if k in df[by].unique() else False for k in c.keys() ]):
-            ax = sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, ax=ax, saturation=0.7, **params)
+            sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, hue_order=hue_order, ax=ax, saturation=0.7, **params)
             ax.legend([], [], frameon=False)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
     elif isinstance(c, str) and by is not None:
-        ax = sns.boxplot(data=df, x=x, y=y, hue=by, ax=ax, saturation=0.7, **params)
+        sns.boxplot(data=df, x=x, y=y, hue=by, hue_order=hue_order, ax=ax, saturation=0.7, **params)
         ax.legend([], [], frameon=False)
         ax.set(xlabel='')
 

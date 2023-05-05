@@ -3,6 +3,7 @@ Supervised.py: functions for classification models training and evaluation.
 """
 
 import numpy as np
+import shap
 from scipy.sparse import issparse
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -19,7 +20,7 @@ from tune_sklearn import TuneGridSearchCV
 
 
 def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_model=8, 
-                cores_GS=1, GS_mode='bayes'):
+                cores_GS=1, GS_mode='bayes', full_output=False, feature_names=None):
     """
     Given some input data X y, run a classification analysis in several flavours.
     """
@@ -113,7 +114,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
             steps=[ 
 
                 ('pp', StandardScaler()), # Always scale expression features
-                (key, models[key])
+                (key, models[key]) 
             ]
         )
 
@@ -157,7 +158,27 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         'f1' : f1_score(y_test, y_pred)
     }
 
-    return d
+    if full_output and feature_names is not None:
+        
+        explainer = shap.Explainer(model.predict, X_test, feature_names=feature_names)
+        SHAP = explainer(X_test)
 
+        results = {
+            'best_estimator' : f,
+            'performance_dict': d, 
+            'SHAP' : SHAP, 
+            'y_test' : y_test, 
+            'y_pred' : y_pred, 
+            'precisions' : precisions, 
+            'recalls' : recalls,
+            'tresholds' : tresholds,
+            'alpha' : alpha  
+        }
+        
+        return results
+    
+    else:
+        return d
+        
 
 ##
