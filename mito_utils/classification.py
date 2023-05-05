@@ -114,7 +114,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
             steps=[ 
 
                 ('pp', StandardScaler()), # Always scale expression features
-                (key, models[key]) 
+                (key, models[key]) # key = 'xgboost'
             ]
         )
 
@@ -160,8 +160,23 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
 
     if full_output and feature_names is not None:
         
-        explainer = shap.Explainer(model.predict, X_test, feature_names=feature_names)
-        SHAP = explainer(X_test)
+        try:
+            explainer = shap.Explainer(
+                f.predict, 
+                X_test, 
+                feature_names=feature_names 
+            )
+            SHAP = explainer(X_test)
+            
+        except:
+            explainer = shap.Explainer(
+                f.predict, 
+                X_test, 
+                feature_names=feature_names,
+                max_evals = 2*feature_names.size+1
+            )
+            SHAP = explainer(X_test)
+            
 
         results = {
             'best_estimator' : f,
