@@ -56,3 +56,29 @@ def custom_ARI(g1, g2):
     max_index = 0.5 * (ai_sum + bi_sum)
 
     return (index - expected_index) / (max_index - expected_index)
+
+
+##
+
+
+def rank_clone_variants(a, clone, by='perc_ratio', min_clone_perc=0.5, max_perc_rest=0.1):
+    """
+    Rank a clone variants.
+    """
+    test = a.obs['GBC'] == clone
+    log2FC = np.log2((np.nanmean(a.X[test, :], axis=0) + 0.000001) / np.nanmean(a.X[~test, :], axis=0))
+    perc_clone = np.sum(a.X[test,:]>0, axis=0) / a[test,:].shape[0] + 0.000001
+    perc_rest = np.sum(a.X[~test,:]>0, axis=0) / a[~test,:].shape[0]
+    perc_ratio = perc_clone / perc_rest
+    
+    df_vars = pd.DataFrame({
+        'log2FC':log2FC, 
+        'perc_clone':perc_clone, 
+        'perc_rest':perc_rest, 
+        'perc_ratio':perc_ratio,
+        },
+        index=a.var_names
+    )
+    df_vars = df_vars.query(f'perc_rest < @max_perc_rest and perc_clone > @min_clone_perc')
+    
+    return df_vars.sort_values(by)
