@@ -150,12 +150,10 @@ format_ax(axs[1], title=s, title_size=10)
 fig.subplots_adjust(top=0.9, bottom=0.1, left=0.15, right=0.85, hspace=0.3)
 fig.savefig(os.path.join(path_results, f'in_vitro_circle_packed.png'))
 
+##############
 
-##
-
-# MDA PT-lung couple 
-others = set(AFMs['MDA_PT'].obs.groupby('GBC').size().loc[lambda x: x<10].index) #| \
-         #set(AFMs['MDA_lung'].obs.groupby('GBC').size().loc[lambda x: x<10].index)
+# Circle packed plot, MDA PT-lung couple 
+others = set(AFMs['MDA_PT'].obs.groupby('GBC').size().loc[lambda x: x<10].index)
 
 df_PT = (
     AFMs['MDA_PT'].obs
@@ -170,8 +168,6 @@ df_PT = (
 )
 df_lung = (
     AFMs['MDA_lung'].obs
-    #.assign(GBC_filtered=lambda x: x['GBC'].apply(lambda x: x if x not in others else 'others'))
-    #.groupby('GBC_filtered')
     .groupby('GBC')
     .size()
     .to_frame('n_cells')
@@ -214,9 +210,7 @@ df_couple = (
     .drop_duplicates()
 )
 
-
 ##
-
 
 # Only major clones, colored by metastatic potential
 fig, axs = plt.subplots(1,2,figsize=(10,5))
@@ -257,6 +251,5 @@ fig.suptitle('MDA in vivo PT-lung couple')
 fig.tight_layout()
 fig.savefig(os.path.join(path_results, f'MDA_couple_circle_packed.png'))
 
-
-##
+##############
 
