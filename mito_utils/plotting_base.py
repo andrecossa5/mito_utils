@@ -667,10 +667,15 @@ def bb_plot(df, cov1=None, cov2=None, show_y=True, legend=True, colors=None,
 ##
 
    
-def packed_circle_plot(df, covariate=None, ax=None, color='b', annotate=False, fontsize=5):
+def packed_circle_plot(df, covariate=None, ax=None, color='b', alpha=0.4,
+        annotate=False, fontsize=5, colors_dict=None, 
+        annot_treshold=0.1, spacing=0.95, linewidth=1.3,
+        edgecolor=None, names_to_annotate=None
+    ):
     """
     Circle plot. Packed.
     """
+    
     df = df.sort_values(covariate, ascending=False)
     circles = circlify(
         df[covariate].to_list(),
@@ -690,19 +695,31 @@ def packed_circle_plot(df, covariate=None, ax=None, color='b', annotate=False, f
     
     for name, circle in zip(df.index[::-1], circles): # Don't know why, but it reverses...
         x, y, r = circle
+        color = colors_dict[name] if colors_dict is not None else color
         ax.add_patch(
-            plt.Circle((x, y), r*0.95, alpha=0.5, linewidth=1.2, 
-                fill=True, edgecolor=color, facecolor=color)
+            plt.Circle((x, y), r*spacing, alpha=alpha, linewidth=linewidth, 
+                fill=True, 
+                edgecolor=edgecolor if edgecolor is not None else color, 
+                facecolor=color
+            )
         )
         
         if annotate:
             cov = df.loc[name, covariate]
-            if cov > 0.01:
-                ax.annotate(
-                    f'{name}: {df.loc[name, covariate]:.2f}', 
-                    (x,y), 
-                    va='center', ha='center', fontsize=fontsize
-                )
+            if names_to_annotate is None:
+                if cov > annot_treshold:
+                    ax.annotate(
+                        f'{name[:5]}: {df.loc[name, covariate]:.2f}', 
+                        (x,y), 
+                        va='center', ha='center', fontsize=fontsize
+                    )
+            else:
+                if name in names_to_annotate:
+                    ax.annotate(
+                        f'{name[:5]}: {df.loc[name, covariate]:.2f}', 
+                        (x,y), 
+                        va='center', ha='center', fontsize=fontsize
+                    )
 
     ax.axis('off')
     
