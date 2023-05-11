@@ -5,11 +5,26 @@ _colors.py stores functions to create Cellula colors.
 import pandas as pd
 import scanpy as sc
 import seaborn as sns
+import colorsys
+
 
 ##
 
 
-def create_palette(df, var, palette=None, col_list=None):
+def _change_color(color, saturation=0.5, lightness=0.5):
+    
+    r, g, b = color
+    h, s, l = colorsys.rgb_to_hls(r, g, b)
+    r, g, b = colorsys.hls_to_rgb(h, lightness, saturation)
+    
+    return (r, g, b)
+
+
+##
+
+
+def create_palette(df, var, palette=None, col_list=None, 
+                saturation=None, lightness=None):
     """
     Create a color palette from a df, a columns, a palette or a list of colors.
     """
@@ -17,6 +32,7 @@ def create_palette(df, var, palette=None, col_list=None):
         cats = df[var].cat.categories
     except:
         cats = df[var].unique()
+    
     n = len(cats)
     if col_list is not None:
         cols = col_list[:n]
@@ -24,7 +40,20 @@ def create_palette(df, var, palette=None, col_list=None):
         cols = sns.color_palette(palette, n_colors=n)
     else:
         raise ValueError('Provide one between palette and col_list!')
+    
     colors = { k: v for k, v in zip(cats, cols)}
+    
+    if saturation is not None:
+        colors = { 
+            k: _change_color(colors[k], saturation=saturation) \
+            for k in colors 
+        }
+    if lightness is not None:
+        colors = { 
+            k: _change_color(colors[k], lightness=lightness) \
+            for k in colors 
+        }
+     
     return colors
 
 

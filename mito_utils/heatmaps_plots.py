@@ -11,7 +11,7 @@ from .colors import *
 
 
 # Cells x vars AFMs
-def cells_vars_heatmap(afm, cell_anno=None, anno_colors=None, heat_label=None, 
+def cells_vars_heatmap(afm, cell_anno='GBC', anno_colors=None, heat_label=None, 
     legend_label=None, figsize=(11, 8), title=None, cbar_position=(0.82, 0.2, 0.02, 0.25),
     title_hjust=0.47, legend_bbox_to_anchor=(0.825, 0.5), legend_loc='lower center', 
     legend_ncol=1, xticks_size=5, order='hclust'):
@@ -31,49 +31,50 @@ def cells_vars_heatmap(afm, cell_anno=None, anno_colors=None, heat_label=None,
         )
         df_agg = (
             df_
-            .groupby('GBC')
+            .groupby(cell_anno)
             .agg('mean')
             .reset_index()
-            .melt(id_vars='GBC')
-            .groupby('GBC')
+            .melt(id_vars=cell_anno)
+            .groupby(cell_anno)
             .apply(lambda x: x.sort_values(by='value', ascending=False))
             .reset_index(drop=True)
-            .pivot_table(index='GBC', values='value', columns='variable')
+            .pivot_table(index=cell_anno, values='value', columns='variable')
         )
         var_order = df_agg.mean(axis=0).sort_values()[::-1].index
         clone_order = np.sum(df_agg>0.01, axis=1).sort_values()[::-1].index
         
-        df_['GBC'] = pd.Categorical(
-            df_['GBC'].astype('str'), 
+        df_[cell_anno] = pd.Categorical(
+            df_[cell_anno].astype('str'), 
             categories=clone_order, 
             ordered=True
         )
-        df_ = df_.sort_values('GBC').iloc[:,2:].loc[:, var_order]
+        df_ = df_.sort_values(cell_anno).iloc[:,2:].loc[:, var_order]
         
     elif 'diagonal':
         
-        df_ = (
-            afm.obs
-            .join(pd.DataFrame(afm.X, index=afm.obs_names, columns=afm.var_names))
-        )
-        df_agg = (
-            df_
-            .groupby('GBC')
-            .agg('mean')
-            .reset_index()
-            .melt(id_vars='GBC')
-            .groupby('GBC')
-            .apply(lambda x: x.sort_values(by='value', ascending=False))
-            .reset_index(drop=True)
-            .pivot_table(index='GBC', values='value', columns='variable')
-        )
-        var_order = df_agg.mean(axis=0).sort_values()[::-1].index
-        var_order
+        print('not implemented yet')
         
+        # df_ = (
+        #     afm.obs
+        #     .join(pd.DataFrame(afm.X, index=afm.obs_names, columns=afm.var_names))
+        # )
+        # df_agg = (
+        #     df_
+        #     .groupby('GBC')
+        #     .agg('mean')
+        #     .reset_index()
+        #     .melt(id_vars='GBC')
+        #     .groupby('GBC')
+        #     .apply(lambda x: x.sort_values(by='value', ascending=False))
+        #     .reset_index(drop=True)
+        #     .pivot_table(index='GBC', values='value', columns='variable')
+        # )
+        # var_order = df_agg.mean(axis=0).sort_values()[::-1].index
+        # var_order
         
         
     # Row colors
-    row_colors = [ anno_colors[x] for x in afm[df_.index, :].obs['GBC'] ]
+    row_colors = [ anno_colors[x] for x in afm[df_.index, :].obs[cell_anno] ]
  
     # Plot heatmap
     g = sns.clustermap(

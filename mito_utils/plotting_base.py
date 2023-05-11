@@ -367,11 +367,11 @@ def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
     """
 
     params = {   
-            'showcaps' : True,
-            'fliersize': 0,
-            'boxprops' : {'edgecolor': 'black', 'linewidth': 0.3}, 
-            'medianprops': {"color": "black", "linewidth": 1},
-            'whiskerprops':{"color": "black", "linewidth": 1}
+        'showcaps' : True,
+        'fliersize': 0,
+        'boxprops' : {'edgecolor': 'black', 'linewidth': .8}, 
+        'medianprops': {"color": "black", "linewidth": 1.5},
+        'whiskerprops':{"color": "black", "linewidth": 1.2}
     }
 
     params = update_params(params, kwargs)
