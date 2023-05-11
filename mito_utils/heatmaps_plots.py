@@ -31,6 +31,7 @@ def cells_vars_heatmap(afm, cell_anno='GBC', anno_colors=None, heat_label=None,
         )
         df_agg = (
             df_
+            .drop('sample', axis=1)
             .groupby(cell_anno)
             .mean()
             .reset_index()
