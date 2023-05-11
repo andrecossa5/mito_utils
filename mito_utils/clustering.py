@@ -79,6 +79,6 @@ def rank_clone_variants(a, clone, by='perc_ratio', min_clone_perc=0.5, max_perc_
         },
         index=a.var_names
     )
-    df_vars = df_vars.query(f'perc_rest < @max_perc_rest and perc_clone > @min_clone_perc')
+    df_vars = df_vars.query(f'perc_rest <= @max_perc_rest and perc_clone >= @min_clone_perc')
     
-    return df_vars.sort_values(by)
+    return df_vars.sort_values(by, ascending=False)
