@@ -32,7 +32,7 @@ def cells_vars_heatmap(afm, cell_anno='GBC', anno_colors=None, heat_label=None,
         df_agg = (
             df_
             .groupby(cell_anno)
-            .agg('mean')
+            .mean()
             .reset_index()
             .melt(id_vars=cell_anno)
             .groupby(cell_anno)
