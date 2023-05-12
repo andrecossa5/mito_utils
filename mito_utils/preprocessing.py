@@ -11,7 +11,7 @@ import pandas as pd
 import scanpy as sc
 import anndata
 from mquad.mquad import *
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, csc_matrix
 from pegasus.tools.hvf_selection import fit_loess
 
 
@@ -121,27 +121,27 @@ def format_matrix(A, cbc_gbc_df=None, with_clones=True, only_variants=True):
 ##
 
 
-def read_one_sample(path_data, sample=None, only_variants=True):
+def read_one_sample(path_data, sample=None, only_variants=True, with_GBC=False):
     """
     Read and format one sample AFM.
     """
     A = sc.read(os.path.join(path_data, sample, 'AFM.h5ad'))
     barcodes = pd.read_csv(os.path.join(path_data, sample, 'barcodes.txt'), index_col=0)
-    cbc_gbc_df = pd.read_csv(
-                    os.path.join(path_data, sample, 'cells_summary_table.csv'), 
-                    index_col=0
-                )
 
-    # Filter cells passing transcriptional QC (barcodes) and confidently assigned 
-    # to a single GBC clone
-    valid_cbcs = list(
-          set(cbc_gbc_df.index) \
-        & set(A.obs_names) \
-        & set(barcodes.index)
-    )
- 
-    A = A[valid_cbcs, :].copy()
-    cbc_gbc_df = cbc_gbc_df.loc[valid_cbcs, :]
+    # Filter cell barcodes
+    valid_cbcs = set(A.obs_names) & set(barcodes.index)
+    # GBC info
+    if with_GBC:
+        cbc_gbc_df = pd.read_csv(
+            os.path.join(path_data, sample, 'cells_summary_table.csv'), 
+            index_col=0
+        )
+        valid_cbcs = valid_cbcs & set(cbc_gbc_df.index)
+    
+    # Subset
+    cells = list(valid_cbcs)
+    A = A[cells, :].copy()
+    cbc_gbc_df = cbc_gbc_df.loc[cells, :]
     
     # Format
     A.layers['coverage'] = A.layers['cov']
@@ -484,21 +484,26 @@ def filter_pegasus(afm, span=0.02, n=1000):
 ##
 
 
-def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
+def get_AD_DP(afm, to='coo'):
     """
-    Filter variants using the Mquad method.
+    From a given AFM matrix, find the AD and DP parallel matrices.
     """
     # Get DP counts
     DP = afm.uns['per_position_coverage'].T.values
-    DP = coo_matrix(DP)
-
+    if to == 'coo':
+        DP = coo_matrix(DP)
+    else:
+        DP = csc_matrix(DP)
+        
     # Get AD counts
     sites = afm.uns['per_position_coverage'].columns
     variants = afm.var_names
+    
     # Check consistency sites/variants remaining after previous filters
     test_1 = variants.map(lambda x: x.split('_')[0]).unique().isin(sites).all()
     test_2 = sites.isin(variants.map(lambda x: x.split('_')[0]).unique()).all()
     assert test_1 and test_2
+    
     # Get alternative allele variants
     ad_vars = []
     only_sites_names = variants.map(lambda x: x.split('_')[0])
@@ -511,9 +516,25 @@ def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
             cum_sum = afm[:, site_vars].layers['coverage'].sum(axis=0)
             idx_ad = np.argmax(cum_sum)
             ad_vars.append(site_vars[idx_ad])
+            
     # Get AD counts
     AD = afm[:, ad_vars].layers['coverage'].T
-    AD = coo_matrix(AD)
+    if to == 'coo':
+        AD = coo_matrix(AD)
+    else:
+        AD = csc_matrix(AD)
+    
+    return AD, DP, ad_vars
+
+
+##
+
+
+def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
+    """
+    Filter variants using the Mquad method.
+    """
+    AD, DP, ad_vars = get_AD_DP(afm, to='coo')
 
     # Select variants
     assert DP.shape == AD.shape
