@@ -626,7 +626,7 @@ def filter_density(afm, density=0.5, steps=np.Inf):
 
 
 def filter_cells_and_vars(
-    afm, blacklist=None, sample=None, filtering=None, min_cell_number=None, 
+    afm, blacklist=None, sample=None, filtering=None, min_cell_number=0, 
     min_cov_treshold=None, variants=None, nproc=8, path_=None, n=1000):
     """
     Filter cells and vars from an afm.
