@@ -149,7 +149,7 @@ def read_one_sample(path_data, sample=None, only_variants=True, with_GBC=False):
     afm = format_matrix(
         A, 
         cbc_gbc_df=cbc_gbc_df if with_GBC else None, 
-        only_variants=only_variants
+        only_variants=only_variants,
         with_GBC=with_GBC
     )
     afm.obs = afm.obs.assign(sample=sample)
