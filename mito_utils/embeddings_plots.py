@@ -68,7 +68,11 @@ def handle_colors(df, cat, legend_params, query=None):
     else:
         df_ = df
 
-    categories = df_[cat].unique()
+    try:
+        categories = df_[cat].cat.categories
+    except:
+        categories = df_[cat].unique()
+        
     if categories.size <=20 and legend_params['colors'] is None:
         palette_cat = sc.pl.palettes.vega_20_scanpy
         legend_params['colors'] = create_palette(df_, cat, palette_cat)

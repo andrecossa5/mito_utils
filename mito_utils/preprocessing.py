@@ -642,6 +642,7 @@ def filter_cells_and_vars(
         logger.info(f'Original AFM n cells: {afm.shape[0]}')
         logger.info(f'Filtered AFM n cells: {a_cells.shape[0]}')
         logger.info(f'Removed n {afm.shape[0]-a_cells.shape[0]} cells')
+        
         if min_cell_number > 0:
             n_cells = a_cells.shape[0]
             logger.info(f'Filtering cells from clones with >{min_cell_number} cells')
