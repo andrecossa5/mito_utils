@@ -97,3 +97,5 @@ dependencies:
       - textalloc==0.0.5
       - tune-sklearn==0.4.5
       - vireosnp==0.5.8
+      - shap 
+      - circlify
