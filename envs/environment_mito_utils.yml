@@ -65,7 +65,6 @@ dependencies:
   - python=3.9.16=h2782a2a_0_cpython
   - python-annoy=1.17.1=py39h5a03fae_0
   - scanpy=1.9.3=pyhd8ed1ab_0
-  - scikit-learn=1.2.2=py39hd189fd4_1
   - scipy=1.10.1=py39he83f1e1_0
   - setuptools=67.7.1=pyhd8ed1ab_0
   - six=1.16.0=pyh6c4a22f_0
@@ -91,6 +90,7 @@ dependencies:
       - pyrsistent==0.19.3
       - python-igraph==0.10.4
       - ray==2.3.1
+      - scikit-learn==1.2.2
       - scikit-misc==0.2.0
       - seaborn==0.11.2
       - statannotations==0.5.0
