@@ -149,16 +149,16 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
     X_test = scaler.fit_transform(X_test)
     y_pred_probabilities = f.predict_proba(X_test)[:,1]
     y_pred = [ 1 if y >= alpha else 0 for y in y_pred_probabilities ]
-
     d = {
         'accuracy' : accuracy_score(y_test, y_pred),
         'balanced_accuracy' : balanced_accuracy_score(y_test, y_pred),
         'precision' : precision_score(y_test, y_pred),
         'recall' : recall_score(y_test, y_pred),
-        'f1' : f1_score(y_test, y_pred)
+        'f1' : f1_score(y_test, y_pred),
+        'AUCPR' : auc(recalls, precisions)
     }
 
-    if full_output and feature_names is not None:
+    if full_output is not None:
         
         try:
             explainer = shap.Explainer(
@@ -177,23 +177,22 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
             )
             SHAP = explainer(X_test)
             
-
-        results = {
-            'best_estimator' : f,
-            'performance_dict': d, 
-            'SHAP' : SHAP, 
-            'y_test' : y_test, 
-            'y_pred' : y_pred, 
-            'precisions' : precisions, 
-            'recalls' : recalls,
-            'tresholds' : tresholds,
-            'alpha' : alpha  
-        }
-        
-        return results
+    # Pack results up
+    results = {
+        'best_estimator' : f,
+        'performance_dict': d, 
+        'y_test' : y_test, 
+        'y_pred' : y_pred, 
+        'precisions' : precisions, 
+        'recalls' : recalls,
+        'tresholds' : tresholds,
+        'alpha' : alpha  
+    }
     
-    else:
-        return d
+    if full_output is not None:
+        results['SHAP'] = SHAP
+        
+    return results
         
 
 ##
