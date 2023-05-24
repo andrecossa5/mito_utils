@@ -158,7 +158,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         'AUCPR' : auc(recalls, precisions)
     }
 
-    if full_output is not None:
+    if full_output:
         
         try:
             explainer = shap.Explainer(
@@ -189,7 +189,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         'alpha' : alpha  
     }
     
-    if full_output is not None:
+    if full_output:
         results['SHAP'] = SHAP
         
     return results
