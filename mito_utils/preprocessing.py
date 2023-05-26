@@ -719,7 +719,7 @@ def filter_cells_and_vars(
             a_cells = a_cells[test, :].copy()
             logger.info(f'Removed other {n_cells-a_cells.shape[0]} cells')
             logger.info(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
-        a = 'No AFM with filtered MT-SNVs...' 
+        a = a_cells.copy()
     
     else:
         raise ValueError(
