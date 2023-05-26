@@ -11,10 +11,10 @@ from .colors import *
 
 
 # Cells x vars AFMs
-def cells_vars_heatmap(afm, cell_anno='GBC', anno_colors=None, heat_label=None, 
+def cells_vars_heatmap(afm, cmap='magma', cell_anno='GBC', anno_colors=None, heat_label=None, 
     legend_label=None, figsize=(11, 8), title=None, cbar_position=(0.82, 0.2, 0.02, 0.25),
     title_hjust=0.47, legend_bbox_to_anchor=(0.825, 0.5), legend_loc='lower center', 
-    legend_ncol=1, xticks_size=5, order='hclust'):
+    legend_ncol=1, xticks_size=5, order='hclust', vmax=0.2):
     """
     Given a (filtered) cells x vars AFM, produce its (clustered, or ordered) 
     annotated heatmap visualization.
@@ -80,7 +80,7 @@ def cells_vars_heatmap(afm, cell_anno='GBC', anno_colors=None, heat_label=None,
     # Plot heatmap
     g = sns.clustermap(
         df_,
-        cmap='magma', 
+        cmap=cmap, 
         row_colors=row_colors,
         yticklabels=False, 
         xticklabels=True, 
@@ -90,6 +90,8 @@ def cells_vars_heatmap(afm, cell_anno='GBC', anno_colors=None, heat_label=None,
         row_cluster=True if order == 'hclust' else False, 
         col_cluster=True if order == 'hclust' else False, 
         annot=False, 
+        vmin=0,
+        vmax=vmax,
         cbar_kws={'use_gridspec':False, 'orientation':'vertical', 'label':heat_label}
     )
     

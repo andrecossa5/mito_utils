@@ -78,8 +78,12 @@ def add_cbar(x, color='viridis', ax=None, label_size=7, ticks_size=5,
         pos, xticks_position = axins_pos[pos]
         orientation = 'vertical'
     else:
-        pos, xticks_position = axins_pos[orientation+str(pos)]
-        orientation = 'vertical' if orientation == 'v' else 'horizontal'
+        if pos in axins_pos:
+            pos, xticks_position = axins_pos[orientation+str(pos)]
+            orientation = 'vertical' if orientation == 'v' else 'horizontal'
+        else:
+            pos, xticks_position = pos 
+            orientation = 'vertical' if orientation == 'v' else 'horizontal'
     cmap = matplotlib.colormaps[color]
     norm = matplotlib.colors.Normalize(vmin=np.percentile(x, q=5), vmax=np.percentile(x, q=95))
     axins = ax.inset_axes(pos) 

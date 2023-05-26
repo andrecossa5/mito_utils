@@ -102,6 +102,7 @@ def draw_embeddings(
 
     cbar_params={
         'color' : 'viridis',
+        'value_range' : (0, .05),
         'label_size' : 8, 
         'ticks_size' : 6,  
         'pos' : 2,

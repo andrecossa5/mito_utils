@@ -74,7 +74,8 @@ def find_pca(X, n_pcs=30):
 ##
 
 
-def reduce_dimensions(afm, method='PCA', metric='euclidean', n_comps=30, sqrt=False, scale=True):
+def reduce_dimensions(afm, method='PCA', metric='euclidean', n_comps=30, 
+                    sqrt=False, scale=True, seed=1234):
     """
     Util to create dimension-reduced representation of the input SNVs AFM.
     """
@@ -94,7 +95,7 @@ def reduce_dimensions(afm, method='PCA', metric='euclidean', n_comps=30, sqrt=Fa
         feature_names = [ f'PC{i}' for i in range(1, X_reduced.shape[1]+1)]
 
     elif method == 'UMAP':
-        umap = UMAP(n_components=n_comps, metric=metric, random_state=1234)
+        umap = UMAP(n_components=n_comps, metric=metric, random_state=seed)
         X_reduced = umap.fit_transform(X)
         feature_names = [ f'UMAP{i}' for i in range(1, X_reduced.shape[1]+1)]
 

@@ -704,6 +704,22 @@ def filter_cells_and_vars(
             logger.info(f'Removed other {n_cells-a_cells.shape[0]} cells')
             logger.info(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
         a = a_cells[:, variants].copy()
+        a = remove_excluded_sites(a)
+    
+    elif filtering == 'LINEAGE_prep':
+        a_cells = filter_cells_coverage(afm, mean_coverage=min_cov_treshold)
+        if min_cell_number > 0:
+            n_cells = a_cells.shape[0]
+            logger.info(f'Filtering cells from clones with >{min_cell_number} cells')
+            cell_counts = a_cells.obs.groupby('GBC').size()
+            clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
+            test = a_cells.obs['GBC'].isin(clones_to_retain)
+            a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
+            a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
+            a_cells = a_cells[test, :].copy()
+            logger.info(f'Removed other {n_cells-a_cells.shape[0]} cells')
+            logger.info(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
+        a = 'No AFM with filtered MT-SNVs...' 
     
     else:
         raise ValueError(
