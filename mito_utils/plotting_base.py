@@ -291,12 +291,12 @@ def scatter(df, x, y, by=None, c='r', s=1.0, a=1, l=None, ax=None, scale_x=None,
             cmap=c, alpha=a)
 
     elif isinstance(c, dict) and by is not None:
-        assert all([ x in c for x in df[by].unique() ])
+        #assert all([ x in c for x in df[by].unique() ])
         colors = [ c[x] for x in df[by] ]
         ax.scatter(df[x], df[y], c=colors, label=l, marker='.', s=size, alpha=a)
 
     else:
-        raise ValueError('c needs to be specified as a dict of colors with "by" of a single color.')
+        raise ValueError('c needs to be specified as a dict of colors with "by", or a single color.')
 
     return ax
 
@@ -728,3 +728,6 @@ def packed_circle_plot(df, covariate=None, ax=None, color='b', alpha=0.4,
     ax.axis('off')
     
     return ax
+
+
+##

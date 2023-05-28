@@ -6,6 +6,8 @@ import pandas as pd
 import scanpy as sc
 import seaborn as sns
 import colorsys
+import matplotlib.colors
+import numpy as np
 
 
 ##
@@ -81,3 +83,91 @@ def create_colors(meta, chosen=None):
         colors[chosen] = { cluster : color for cluster, color in zip(meta[chosen].cat.categories, c)}
 
     return colors
+
+
+##
+
+
+def harmonize_colors(embs, palette=None):
+    """
+    Given two sets of labels, create two dicts of colors that match closely.
+    """
+    
+    if palette is None:
+        if embs['GBC'].unique().size > 15:
+            palette = [ matplotlib.colors.hex2color(x) for x in sc.pl.palettes.godsnot_102 ]
+        else:
+            palette = ten_godisnot
+            
+    cross = pd.crosstab(embs['inference'], embs['GBC'].astype('str'), normalize=0)
+    # order = embs.groupby('inference').size().sort_values(ascending=False).index
+    # cross = cross.loc[order,:]
+    
+    gbc = []
+    inference = []
+    colors = []
+    inference_labels = cross.index.to_list()
+    gbc_labels = cross.columns.to_list()
+
+    for i in range(cross.shape[0]):
+
+        x = cross.iloc[i,:] 
+        j = np.argmax(x)
+        # go = True
+        # while go:
+        #     try:
+        #         j = np.where(x>t)[0][0]
+        #         go = False
+        #     except:
+        #         t -= 0.1            
+
+        inference.append(inference_labels[i])
+        colors.append(palette[i])
+                      
+        if not gbc_labels[j] in gbc:
+            gbc.append(gbc_labels[j])
+            
+    len(colors)
+
+    # Final rescue
+    for clone in gbc_labels:
+        if clone not in gbc:
+            i += 1
+            gbc.append(clone)
+            colors.append(palette[i])
+            
+    colors_gbc = { k:v for k,v in zip(gbc, colors[:len(gbc)])} 
+    colors_inference = { k:v for k,v in zip(inference, colors[:len(inference)])} 
+
+    if 'unassigned' in embs['inference'].values:
+        colors_inference['unassigned'] = (
+            0.8470588235294118, 0.8274509803921568, 0.792156862745098
+        )
+        
+    assert all([x in gbc_labels for x in colors_gbc])
+    assert all([x in inference_labels for x in inference])
+
+    return colors_gbc, colors_inference
+    
+        
+##
+
+        
+# Palettes
+ten_godisnot = [
+    
+    '#001E09', 
+    '#885578',
+    '#FF913F', 
+    '#1CE6FF', 
+    '#549E79', 
+    '#C9E850', #'#00FECF', 
+    '#EEC3FF', 
+    '#FFEF00',#'#0000A6', 
+    '#D157A0', 
+    '#922329'
+    
+]
+
+ten_godisnot = [ matplotlib.colors.hex2color(x) for x in ten_godisnot ]
+
