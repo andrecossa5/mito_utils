@@ -494,13 +494,14 @@ def violin(df, x, y, by=None, c=None, a=1, l=None, ax=None, with_stats=False, or
 
 def plot_heatmap(df, palette='mako', ax=None, title=None, x_names=True, y_names=True, 
     x_names_size=7, y_names_size=7, xlabel=None, ylabel=None, annot=False, annot_size=5, 
-    label=None, shrink=1.0, cb=True):
+    label=None, shrink=1.0, cb=True, vmin=None, vmax=None):
     """
     Simple heatmap.
     """
     ax = sns.heatmap(data=df, ax=ax, robust=True, cmap=palette, annot=annot, xticklabels=x_names, 
         yticklabels=y_names, fmt='.2f', annot_kws={'size':annot_size}, cbar=cb,
-        cbar_kws={'fraction':0.05, 'aspect':35, 'pad': 0.02, 'shrink':shrink, 'label':label}
+        cbar_kws={'fraction':0.05, 'aspect':35, 'pad': 0.02, 'shrink':shrink, 'label':label},
+        vmin=vmin, vmax=vmax
     )
     ax.set(title=title, xlabel=xlabel, ylabel=ylabel)
     ax.set_xticklabels(ax.get_xticklabels(), fontsize=x_names_size)
