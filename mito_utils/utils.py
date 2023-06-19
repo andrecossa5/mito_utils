@@ -118,3 +118,16 @@ def one_hot_from_labels(y):
         Y = np.where(y == y.categories[0], 1, 0)
     
     return Y
+
+
+##
+
+
+def rescale(x):
+    """
+    Max/min rescaling.
+    """    
+    if np.min(x) != np.max(x):
+        return (x - np.min(x)) / (np.max(x) - np.min(x))
+    else:
+        return x

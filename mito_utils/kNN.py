@@ -17,8 +17,8 @@ from .utils import *
 ##
 
 
-
-def _NN(X, k=15, metric='euclidean', implementation='pyNNDescent', random_state=1234, metric_kwds={}):
+def _NN(X, k=15, metric='euclidean', implementation='pyNNDescent', 
+    random_state=1234, metric_kwds={}):
     """
     kNN search over an X obs x features matrix. pyNNDescent and hsnwlib implementation available.
     """
@@ -27,12 +27,10 @@ def _NN(X, k=15, metric='euclidean', implementation='pyNNDescent', random_state=
         knn_indices, knn_dists, forest = nearest_neighbors(
             X,
             k,
-
             metric=metric, 
             metric_kwds=metric_kwds,
             angular=False,
             random_state=random_state
-
         )
 
     # kNN search: hnswlib. Only for euclidean and massive cases
@@ -75,12 +73,22 @@ def get_idx_from_simmetric_matrix(X, k=15):
         X = X.toarray()
         
     assert X.shape[0] == X.shape[1]
-    idx = np.argsort(X, axis=1)
-    X = X[np.arange(X.shape[0])[:,None], idx]
-    idx = idx[:,:k]
-    X = X[:,:k]
 
-    return idx, X
+    idx_all = []
+    for i in range(X.shape[0]):
+        x = np.delete(X[i,:], i)
+        idx_all.append(x.argsort())
+
+    idx_all = np.concatenate([
+        np.arange(X.shape[0]).reshape(X.shape[0],1),
+        np.vstack(idx_all)
+        ], axis=1
+    )
+
+    idx = idx_all[:,:k]
+    dists = X[np.arange(X.shape[0])[:, None], idx]
+
+    return idx, dists
 
 
 ##
@@ -116,3 +124,17 @@ def kNN_graph(X, k=15, from_distances=False, nn_kwargs={}):
     )
 
     return (knn_indices, distances, connectivities)
+
+
+##
+
+
+def spatial_w_from_idx(idx):
+    n = idx.shape[0]
+    spw = np.zeros((n,n))
+    for i in range(n):
+        spw[i,idx[i,1:]] = 1
+    return spw
+
+
+##
