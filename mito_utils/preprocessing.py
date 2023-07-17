@@ -230,7 +230,6 @@ def filter_cells_coverage(afm, mean_coverage=50):
     Simple filter to subset an AFM only for cells with at least <median_coverage> median site coverage. 
     """
     test_cells = np.nanmean(afm.uns['per_position_coverage'].values, axis=1) > mean_coverage
-    test_cells.sum()
     filtered = afm[test_cells, :].copy()
     filtered.uns['per_position_coverage'] = filtered.uns['per_position_coverage'].loc[test_cells, :]
     filtered.uns['per_position_quality'] = filtered.uns['per_position_quality'].loc[test_cells, :]
@@ -245,9 +244,10 @@ def remove_excluded_sites(afm):
     """
     Remove sites belonging to non-selected AFM variants.
     """
+    cells = afm.obs_names
     sites_retained = afm.var_names.map(lambda x: x.split('_')[0]).unique()
-    afm.uns['per_position_coverage'] = afm.uns['per_position_coverage'].loc[:, sites_retained]
-    afm.uns['per_position_quality'] = afm.uns['per_position_quality'].loc[:, sites_retained]
+    afm.uns['per_position_coverage'] = afm.uns['per_position_coverage'].loc[cells, sites_retained]
+    afm.uns['per_position_quality'] = afm.uns['per_position_quality'].loc[cells, sites_retained]
 
     return afm
 
@@ -627,7 +627,8 @@ def filter_density(afm, density=0.5, steps=np.Inf):
 
 def filter_cells_and_vars(
     afm, blacklist=None, sample=None, filtering=None, min_cell_number=0, 
-    min_cov_treshold=None, variants=None, nproc=8, path_=None, n=1000):
+    filter_cells=True, min_cov_treshold=None, variants=None, cells=None, 
+    nproc=8, path_=None, n=1000):
     """
     Filter cells and vars from an afm.
     """ 
@@ -635,14 +636,20 @@ def filter_cells_and_vars(
     logger.info(f'Filter cells and variants for the original AFM...')
 
     if filtering in filtering_options and filtering != 'density':
+
         # Cells
         logger.info(f'Feature selection method: {filtering}')
-        logger.info(f'Filtering cells with >{min_cov_treshold} coverage')
-        a_cells = filter_cells_coverage(afm, mean_coverage=min_cov_treshold)
-        logger.info(f'Original AFM n cells: {afm.shape[0]}')
-        logger.info(f'Filtered AFM n cells: {a_cells.shape[0]}')
-        logger.info(f'Removed n {afm.shape[0]-a_cells.shape[0]} cells')
-        
+
+        if filter_cells:
+            logger.info(f'Filtering cells with >{min_cov_treshold} coverage')
+            a_cells = filter_cells_coverage(afm, mean_coverage=min_cov_treshold)
+            logger.info(f'Original AFM n cells: {afm.shape[0]}')
+            logger.info(f'Filtered AFM n cells: {a_cells.shape[0]}')
+            logger.info(f'Removed n {afm.shape[0]-a_cells.shape[0]} cells')
+        else:
+            logger.info(f'No cell filtering according to MT-coverage. Already done?')
+            a_cells = afm.copy()
+
         if min_cell_number > 0:
             n_cells = a_cells.shape[0]
             logger.info(f'Filtering cells from clones with >{min_cell_number} cells')
@@ -690,22 +697,6 @@ def filter_cells_and_vars(
         a_cells = filter_baseline(a_cells)
         a = filter_density(a_cells)
 
-    elif filtering is None and variants is not None:
-        a_cells = filter_cells_coverage(afm, mean_coverage=min_cov_treshold)
-        if min_cell_number > 0:
-            n_cells = a_cells.shape[0]
-            logger.info(f'Filtering cells from clones with >{min_cell_number} cells')
-            cell_counts = a_cells.obs.groupby('GBC').size()
-            clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
-            test = a_cells.obs['GBC'].isin(clones_to_retain)
-            a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
-            a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
-            a_cells = a_cells[test, :].copy()
-            logger.info(f'Removed other {n_cells-a_cells.shape[0]} cells')
-            logger.info(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
-        a = a_cells[:, variants].copy()
-        a = remove_excluded_sites(a)
-    
     elif filtering == 'LINEAGE_prep':
         a_cells = filter_cells_coverage(afm, mean_coverage=min_cov_treshold)
         if min_cell_number > 0:
@@ -720,6 +711,27 @@ def filter_cells_and_vars(
             logger.info(f'Removed other {n_cells-a_cells.shape[0]} cells')
             logger.info(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
         a = a_cells.copy()
+
+    elif cells is None and variants is not None:
+        a_cells = filter_cells_coverage(afm, mean_coverage=min_cov_treshold)
+        if min_cell_number > 0:
+            n_cells = a_cells.shape[0]
+            logger.info(f'Filtering cells from clones with >{min_cell_number} cells')
+            cell_counts = a_cells.obs.groupby('GBC').size()
+            clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
+            test = a_cells.obs['GBC'].isin(clones_to_retain)
+            a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
+            a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
+            a_cells = a_cells[test, :].copy()
+            logger.info(f'Removed other {n_cells-a_cells.shape[0]} cells')
+            logger.info(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
+        a = a_cells[:, variants].copy()
+        a = remove_excluded_sites(a)
+
+    elif cells is not None and variants is not None:
+        a_cells = afm[cells, variants].copy()
+        a_cells = remove_excluded_sites(a_cells)
+        a = a_cells
     
     else:
         raise ValueError(

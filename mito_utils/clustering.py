@@ -61,26 +61,45 @@ def custom_ARI(g1, g2):
 ##
 
 
-def rank_clone_variants(a, clone, by='perc_ratio', min_clone_perc=0.5, max_perc_rest=0.1):
+# rank_clone_variants(a, var='it', group=3, rank_by=rank_by)
+
+def rank_clone_variants(
+    a, var='GBC', group=None,
+    filter_vars=True, rank_by='log2_perc_ratio', 
+    min_clone_perc=.5, max_perc_rest=.2, min_perc_all=.1, log2_min_perc_ratio=.2
+    ):
     """
     Rank a clone variants.
     """
-    test = a.obs['GBC'] == clone
-    log2FC = np.log2((np.nanmean(a.X[test, :], axis=0) + 0.000001) / np.nanmean(a.X[~test, :], axis=0))
-    perc_clone = np.sum(a.X[test,:]>0, axis=0) / a[test,:].shape[0] + 0.000001
+    test = a.obs[var] == group
+    log2FC = np.log2(np.nanmean(a.X[test,:], axis=0)+1)-np.log2(np.nanmean(a.X[~test, :], axis=0)+1)
+    perc_all = np.sum(a.X>0, axis=0) / a.shape[0]
+    perc_clone = np.sum(a.X[test,:]>0, axis=0) / a[test,:].shape[0]
     perc_rest = np.sum(a.X[~test,:]>0, axis=0) / a[~test,:].shape[0]
-    perc_ratio = perc_clone / perc_rest
-    
+    perc_ratio = np.log2(perc_clone+1) - np.log2(perc_rest+1)
     df_vars = pd.DataFrame({
-        'log2FC':log2FC, 
-        'perc_clone':perc_clone, 
-        'perc_rest':perc_rest, 
-        'perc_ratio':perc_ratio,
+        'log2FC': log2FC, 
+        'perc_clone': perc_clone, 
+        'perc_rest': perc_rest, 
+        'log2_perc_ratio': perc_ratio,
+        'perc_all' : perc_all,
         },
         index=a.var_names
     )
-    
-    if min_clone_perc is not None and max_perc_rest is not None:
-        df_vars = df_vars.query(f'perc_rest <= @max_perc_rest and perc_clone >= @min_clone_perc')
-    
-    return df_vars.sort_values(by, ascending=False)
+
+    # Filter variants
+    if filter_vars:
+        if rank_by == 'log2_perc_ratio':
+            test = f'log2_perc_ratio >= @log2_min_perc_ratio & perc_clone >= @min_clone_perc'
+            df_vars = df_vars.query(test)
+        elif rank_by == 'custom_perc_tresholds':
+            test = f'perc_rest <= @max_perc_rest & perc_clone >= @min_clone_perc'
+            df_vars = df_vars.query(test)
+            df_vars.shape
+    else:
+        print('Returning all variants, ranked...')
+
+    # Sort
+    df_vars = df_vars.sort_values('log2_perc_ratio', ascending=False)
+
+    return df_vars
