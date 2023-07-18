@@ -51,11 +51,12 @@ def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None, p_treshold=.85, random
     putatite MT-clones labels.
     """
     afm = nans_as_zeros(afm)
+
     # Get AD, DP
     AD, DP, _ = get_AD_DP(afm, to='csc')
     # Find the max_n_clones to test
     if max_n_clones is None:
-        max_n_clones = afm.shape[1] if afm.shape[1] <= 15 else 15
+        max_n_clones = afm.shape[1]
     # Here we go
     range_clones = range(min_n_clones, max_n_clones+1)
     _ELBO_mat = []

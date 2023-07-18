@@ -536,13 +536,13 @@ def get_AD_DP(afm, to='coo'):
 ##
 
 
-def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
+def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None, n=None):
     """
     Filter variants using the Mquad method.
     """
     # Prefilter again, if still too much
-    if afm.shape[1]>1000:
-        afm = filter_pegasus(afm, n=1000)  
+    if n is not None:
+        afm = filter_pegasus(afm, n=n)  
         afm = remove_excluded_sites(afm)
 
     AD, DP, ad_vars = get_AD_DP(afm, to='coo')
@@ -552,7 +552,8 @@ def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
     M = Mquad(AD=AD, DP=DP)
     df = M.fit_deltaBIC(out_dir=path_, nproc=nproc, minDP=minDP, minAD=minAD)
     best_ad, best_dp = M.selectInformativeVariants(
-        min_cells=minCell, out_dir=path_, tenx_cutoff=None, export_heatmap=False, export_mtx=False
+        min_cells=minCell, out_dir=path_, tenx_cutoff=None,
+        export_heatmap=False, export_mtx=False
     )
     selected_idx = M.final_df.index.to_list()
     selected_vars = [ ad_vars[i] for i in selected_idx ]
@@ -682,7 +683,7 @@ def filter_cells_and_vars(
         elif filtering == 'pegasus':
             a = filter_pegasus(a_cells, n=n)
         elif filtering == 'MQuad':
-            a = filter_Mquad(a_cells, nproc=nproc, path_=path_)
+            a = filter_Mquad(a_cells, nproc=nproc, path_=path_, n=n)
         elif filtering == 'DADApy':
             a = filter_DADApy(a_cells)
 
@@ -755,7 +756,6 @@ def filter_cells_and_vars(
 
 
 ##
-
 
 
 def summary_stats_vars(afm, variants=None):
