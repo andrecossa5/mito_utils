@@ -728,6 +728,11 @@ def filter_cells_and_vars(
         a = a_cells[:, variants].copy()
         a = remove_excluded_sites(a)
 
+    elif cells is not None and variants is None:
+        a_cells = afm[cells, :].copy()
+        a_cells = remove_excluded_sites(a_cells)
+        a = a_cells
+
     elif cells is not None and variants is not None:
         a_cells = afm[cells, variants].copy()
         a_cells = remove_excluded_sites(a_cells)
