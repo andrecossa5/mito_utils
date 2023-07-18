@@ -541,8 +541,8 @@ def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
     Filter variants using the Mquad method.
     """
     # Prefilter again, if still too much
-    if afm.shape[1]>200:
-        afm = filter_pegasus(afm, n=100)  
+    if afm.shape[1]>1000:
+        afm = filter_pegasus(afm, n=1000)  
         afm = remove_excluded_sites(afm)
 
     AD, DP, ad_vars = get_AD_DP(afm, to='coo')
