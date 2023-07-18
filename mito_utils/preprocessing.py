@@ -540,6 +540,11 @@ def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None):
     """
     Filter variants using the Mquad method.
     """
+    # Prefilter again, if still too much
+    if afm.shape[1]>200:
+        afm = filter_pegasus(afm, n=100)  
+        afm = remove_excluded_sites(afm)
+
     AD, DP, ad_vars = get_AD_DP(afm, to='coo')
 
     # Select variants
@@ -627,7 +632,7 @@ def filter_density(afm, density=0.5, steps=np.Inf):
 
 def filter_cells_and_vars(
     afm, blacklist=None, sample=None, filtering=None, min_cell_number=0, 
-    filter_cells=True, min_cov_treshold=None, variants=None, cells=None, 
+    filter_cells=True, min_cov_treshold=50, variants=None, cells=None, 
     nproc=8, path_=None, n=1000):
     """
     Filter cells and vars from an afm.
