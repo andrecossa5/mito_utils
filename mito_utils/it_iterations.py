@@ -47,7 +47,7 @@ def subset_afm(afm):
 
 
 def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None, 
-                n_max_mut=True, p_treshold=.85, random_seed=1234):
+                n_max_mut=False, p_treshold=.85, random_seed=1234):
     """
     Given an AFM (cells x MT-variants), this function uses the vireoSNP method to return a set of 
     putatite MT-clones labels.
