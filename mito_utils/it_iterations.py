@@ -46,7 +46,8 @@ def subset_afm(afm):
 ##
 
 
-def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None, p_treshold=.85, random_seed=1234):
+def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None, 
+                n_max_mut=True, p_treshold=.85, random_seed=1234):
     """
     Given an AFM (cells x MT-variants), this function uses the vireoSNP method to return a set of 
     putatite MT-clones labels.
@@ -57,7 +58,10 @@ def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None, p_treshold=.85, random
     AD, DP, _ = get_AD_DP(afm, to='csc')
     # Find the max_n_clones to test
     if max_n_clones is None:
-        max_n_clones = afm.shape[1]
+        if n_max_mut:
+            max_n_clones = afm.shape[1]
+        else:
+            max_n_clones = 15 if afm.shape[1] > 15 else afm.shape[1]
     # Here we go
     range_clones = range(min_n_clones, max_n_clones+1)
     _ELBO_mat = []
