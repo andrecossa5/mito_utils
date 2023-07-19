@@ -13,6 +13,7 @@ from .utils import *
 from .preprocessing import *
 from .clustering import *
 from .distances import *
+from .it_diagnostics import *
 
 
 ##
@@ -20,8 +21,8 @@ from .distances import *
 
 def subset_one(afm, partition):
     """
-    Given some afm, the labels dictionary produced across iterations, an iteration number and one of its
-    partitions, subset the afm to its cells.
+    Given some afm, the labels dictionary produced across iterations, 
+    an iteration number and one of its partitions, subset the afm to its cells.
     """
     cells = afm.obs.query('it == @partition').index
     a = afm[cells,:].copy()
@@ -98,74 +99,7 @@ def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None, p_treshold=.85, random
 ##
 
 
-def test_partitions_variants(d):
-    """
-    Given a dictionary of exclusive variants per partition, returns two lists,
-    one with all the partitions having at least 1 exclusive variants, and one with none of them.
-    """
-    with_exclusive = [ k for k in d if len(d[k])>0 ]
-    without_exclusive = [ k for k in d if len(d[k])==0 ]
-
-    return with_exclusive, without_exclusive
-
-
-##
-
-
-def test_partitions_distances(a, metric='cosine', t=.5):
-    """
-    Given an AFM and a set of labels in .obs ('it' key), computes a parwise similarity matrix
-    and use this distance as a binary classifier.
-    """
-    D = pair_d(a, metric=metric)
-    labels = a.obs['it'].astype('category')
-
-    assert (labels.value_counts()>1).all()
-
-    d = {}
-
-    for alpha in np.linspace(0,1,10):
-        for i in range(D.shape[0]):
-            x = rescale(D[i,:])
-            c = labels.cat.codes.values[i]
-            pred = np.where(x<=alpha, 1, 0)
-            gt = np.where(labels.cat.codes.values==c, 1, 0)
-            p = precision_score(gt, pred)
-            r = recall_score(gt, pred)
-
-    return 
-
-    # return auc_score > t
-
-
-##
-
-
-def pool_variants(var):
-    it_var = set()
-    for x in var:
-        it_var |= set(x.to_list())
-    return list(it_var)
-
-
-##
-
-
-def update_labels(afm, labels, i):
-
-    if i == 0:
-        afm.obs[f'it_{i}'] = 'poor_quality'
-    else:
-        afm.obs[f'it_{i}'] = afm.obs[f'it_{i-1}']
-
-    s = pd.concat(labels)
-    afm.obs.loc[s.index, f'it_{i}'] = s
-
-
-##
-
-
-def one_iteration(
+def one_it_iterative_splitting(
         afm, mode='iterative_splitting', rank_by='log2_perc_ratio', **kwargs
     ):
     """
@@ -228,5 +162,7 @@ def one_iteration(
         
     return labels, test, variants, a_cells
 
+
+##
 
 
