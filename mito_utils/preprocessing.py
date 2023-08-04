@@ -758,6 +758,30 @@ def filter_cells_and_vars(
 ##
 
 
+def fit_MQuad_mixtures(afm, n=None, path_=None, nproc=1):
+    """
+    Filter variants using the Mquad method.
+    """
+    # Prefilter again, if still too much
+    if n is not None:
+        afm = filter_pegasus(afm, n=n)  
+        afm = remove_excluded_sites(afm)
+
+    AD, DP, ad_vars = get_AD_DP(afm, to='coo')
+
+    # Fit models
+    M = Mquad(AD=AD, DP=DP)
+    path_ = os.getcwd() if path_ is None else path_
+    df = M.fit_deltaBIC(out_dir=path_, nproc=nproc, minDP=0, minAD=0) # Already filtered
+    df.index = ad_vars
+    df['deltaBIC_rank'] = df['deltaBIC'].rank(ascending=False)
+
+    return df.sort_values('deltaBIC', ascending=False)
+
+
+##
+
+
 def summary_stats_vars(afm, variants=None):
     """
     Calculate the most important summary stats for a bunch of variants, collected for
@@ -767,12 +791,18 @@ def summary_stats_vars(afm, variants=None):
         test = afm.var_names.isin(variants)
         density = (~np.isnan(afm[:, test].X)).sum(axis=0) / afm.shape[0]
         median_vafs = np.nanmedian(afm[:, test].X, axis=0)
+        mean_vafs = np.nanmean(afm[:, test].X, axis=0)
+        var_vafs = np.nanvar(afm[:, test].X, axis=0)
+        vmr_vafs = (var_vafs + 0.000001) / mean_vafs
         median_coverage_var = np.nanmedian(afm[:, test].layers['coverage'], axis=0)
         fr_positives = np.sum(afm[:, test].X > 0, axis=0) / afm.shape[0]
         var_names = afm.var_names[test]
     else:
         density = (~np.isnan(afm.X)).sum(axis=0) / afm.shape[0]
         median_vafs = np.nanmedian(afm.X, axis=0)
+        mean_vafs = np.nanmean(afm.X, axis=0)
+        var_vafs = np.nanvar(afm.X, axis=0)
+        vmr_vafs = (var_vafs + 0.000001) / mean_vafs
         median_coverage_var = np.nanmedian(afm.layers['coverage'], axis=0)
         fr_positives = np.sum(afm.X > 0, axis=0) / afm.shape[0]
         var_names = afm.var_names
@@ -782,8 +812,10 @@ def summary_stats_vars(afm, variants=None):
             'density' : density,
             'median_coverage' : median_coverage_var,
             'median_AF' : median_vafs,
-            'fr_positives' : fr_positives
+            'VMR_AF' : vmr_vafs,
+            'fr_positives' : fr_positives,
         }, index=var_names
     )
+    df['VMR_rank'] = df['VMR_AF'].rank(ascending=False).astype('int')
 
     return df

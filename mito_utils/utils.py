@@ -131,3 +131,17 @@ def rescale(x):
         return (x - np.min(x)) / (np.max(x) - np.min(x))
     else:
         return x
+    
+
+##
+
+
+def ji(x, y):
+    """
+    Jaccard Index between two list-like objs.
+    """
+    x = set(x)
+    y = set(y)
+    ji = len(x&y) / len(x|y)
+
+    return ji

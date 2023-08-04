@@ -79,7 +79,7 @@ def update_labels(afm, labels, i):
 ##
 
 
-def find_exclusive_variants(afm, t=.9, **kwargs):
+def find_exclusive_variants(afm, t=.9, group='g', with_variants=False, **kwargs):
     '''
     Find top clone given an AFM with clonal labels.
     '''
@@ -87,10 +87,10 @@ def find_exclusive_variants(afm, t=.9, **kwargs):
     while t>.5:
         n_vars = pd.Series({
             g : rank_clone_variants(
-                afm, var='g', group=g, rank_by='custom_perc_tresholds',
+                afm, var=group, group=g, rank_by='custom_perc_tresholds',
                 min_clone_perc=t, max_perc_rest=.1, **kwargs
             ).shape[0] \
-            for g in afm.obs['g'].unique()
+            for g in afm.obs[group].unique()
         })
         one_dist = np.sum(n_vars>0)>0
         if one_dist:

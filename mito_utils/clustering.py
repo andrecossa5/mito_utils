@@ -62,7 +62,6 @@ def custom_ARI(g1, g2):
 
 
 # rank_clone_variants(a, var='it', group=3, rank_by=rank_by)
-
 def rank_clone_variants(
     a, var='GBC', group=None,
     filter_vars=True, rank_by='log2_perc_ratio', 
@@ -72,12 +71,16 @@ def rank_clone_variants(
     Rank a clone variants.
     """
     test = a.obs[var] == group
-    log2FC = np.log2(np.nanmean(a.X[test,:], axis=0)+1)-np.log2(np.nanmean(a.X[~test, :], axis=0)+1)
+    AF_clone = np.nanmean(a.X[test,:], axis=0)
+    AF_rest = np.nanmean(a.X[~test, :], axis=0)
+    log2FC = np.log2(AF_clone+1)-np.log2(AF_rest+1)
     perc_all = np.sum(a.X>0, axis=0) / a.shape[0]
     perc_clone = np.sum(a.X[test,:]>0, axis=0) / a[test,:].shape[0]
     perc_rest = np.sum(a.X[~test,:]>0, axis=0) / a[~test,:].shape[0]
     perc_ratio = np.log2(perc_clone+1) - np.log2(perc_rest+1)
     df_vars = pd.DataFrame({
+        'median_AF_clone' : AF_clone,
+        'median_AF_rest' : AF_rest,
         'log2FC': log2FC, 
         'perc_clone': perc_clone, 
         'perc_rest': perc_rest, 
@@ -86,6 +89,7 @@ def rank_clone_variants(
         },
         index=a.var_names
     )
+    df_vars['n_cells_clone'] = np.sum(test)
 
     # Filter variants
     if filter_vars:
