@@ -536,7 +536,7 @@ def get_AD_DP(afm, to='coo'):
 ##
 
 
-def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None, n=None):
+def fit_MQuad_mixtures(afm, n=None, path_=None, nproc=1, minDP=10, minAD=1, with_M=False):
     """
     Filter variants using the Mquad method.
     """
@@ -547,19 +547,43 @@ def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None, n=None)
 
     AD, DP, ad_vars = get_AD_DP(afm, to='coo')
 
-    # Select variants
-    assert DP.shape == AD.shape
+    # Fit models
     M = Mquad(AD=AD, DP=DP)
+    path_ = os.getcwd() if path_ is None else path_
     df = M.fit_deltaBIC(out_dir=path_, nproc=nproc, minDP=minDP, minAD=minAD)
+    df.index = ad_vars
+    df['deltaBIC_rank'] = df['deltaBIC'].rank(ascending=False)
+
+    if with_M:
+        return df.sort_values('deltaBIC', ascending=False), M, ad_vars
+    else:
+        return df.sort_values('deltaBIC', ascending=False)
+    
+
+##
+
+
+def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None, n=None):
+    """
+    Filter variants using the Mquad method.
+    """
+    df, M, ad_vars = fit_MQuad_mixtures(
+        afm, n=n, path_=path_, nproc=nproc, minDP=minDP, minAD=minAD, with_M=True, 
+    )
     best_ad, best_dp = M.selectInformativeVariants(
         min_cells=minCell, out_dir=path_, tenx_cutoff=None,
         export_heatmap=False, export_mtx=False
     )
     selected_idx = M.final_df.index.to_list()
     selected_vars = [ ad_vars[i] for i in selected_idx ]
+
     # Subset matrix
     filtered = afm[:, selected_vars].copy()
     filtered = remove_excluded_sites(filtered) # Remove sites
+
+    # Write df
+    os.system(f'rm {os.path.join(path_, "*BIC*")}')
+    df.to_csv(os.path.join(path_, 'MQuad_stats.csv'))
 
     return filtered
 
@@ -634,7 +658,7 @@ def filter_density(afm, density=0.5, steps=np.Inf):
 def filter_cells_and_vars(
     afm, blacklist=None, sample=None, filtering=None, min_cell_number=0, 
     filter_cells=True, min_cov_treshold=50, variants=None, cells=None, 
-    nproc=8, path_=None, n=1000):
+    nproc=8, path_=None, n=1000, prefilter_MQuad=False):
     """
     Filter cells and vars from an afm.
     """ 
@@ -683,6 +707,7 @@ def filter_cells_and_vars(
         elif filtering == 'pegasus':
             a = filter_pegasus(a_cells, n=n)
         elif filtering == 'MQuad':
+            n = None if not prefilter_MQuad else n
             a = filter_Mquad(a_cells, nproc=nproc, path_=path_, n=n)
         elif filtering == 'DADApy':
             a = filter_DADApy(a_cells)
@@ -753,30 +778,6 @@ def filter_cells_and_vars(
     logger.info(f'Filtered feature matrix contains {a.shape[0]} cells and {a.shape[1]} variants.')
 
     return a_cells, a
-
-
-##
-
-
-def fit_MQuad_mixtures(afm, n=None, path_=None, nproc=1):
-    """
-    Filter variants using the Mquad method.
-    """
-    # Prefilter again, if still too much
-    if n is not None:
-        afm = filter_pegasus(afm, n=n)  
-        afm = remove_excluded_sites(afm)
-
-    AD, DP, ad_vars = get_AD_DP(afm, to='coo')
-
-    # Fit models
-    M = Mquad(AD=AD, DP=DP)
-    path_ = os.getcwd() if path_ is None else path_
-    df = M.fit_deltaBIC(out_dir=path_, nproc=nproc, minDP=0, minAD=0) # Already filtered
-    df.index = ad_vars
-    df['deltaBIC_rank'] = df['deltaBIC'].rank(ascending=False)
-
-    return df.sort_values('deltaBIC', ascending=False)
 
 
 ##
