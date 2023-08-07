@@ -3,16 +3,14 @@ Utilities for the iterative scheme of clonal selection.
 """
 
 import os
-import pickle
 import numpy as np
 import pandas as pd
-from kneed import KneeLocator
-from vireoSNP import BinomMixtureVB
 
 from .utils import *
 from .preprocessing import *
 from .clustering import *
 from .distances import *
+from ._vireo import *
 from .it_diagnostics import *
 
 
@@ -52,24 +50,25 @@ def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None,
     Given an AFM (cells x MT-variants), this function uses the vireoSNP method to return a set of 
     putatite MT-clones labels.
     """
-    afm = nans_as_zeros(afm)
 
     # Get AD, DP
+    afm = nans_as_zeros(afm)
     AD, DP, _ = get_AD_DP(afm, to='csc')
+
     # Find the max_n_clones to test
     if max_n_clones is None:
         if n_max_mut:
             max_n_clones = afm.shape[1]
         else:
             max_n_clones = 15 if afm.shape[1] > 15 else afm.shape[1]
+
     # Here we go
     range_clones = range(min_n_clones, max_n_clones+1)
     _ELBO_mat = []
     for k in range_clones:
         print(f'Clone n: {k}')
-        _model = BinomMixtureVB(n_var=AD.shape[0], n_cell=AD.shape[1], n_donor=k)
-        _model.fit(AD, DP, min_iter=30, max_iter=500, max_iter_pre=250, n_init=50, random_seed=random_seed)
-        _ELBO_mat.append(_model.ELBO_inits)
+        model = fit_vireo(AD, DP, k, random_seed=random_seed)
+        _ELBO_mat.append(model.ELBO_inits)
 
     x = range_clones
     y = np.median(_ELBO_mat, axis=1)
@@ -77,25 +76,8 @@ def vireo_wrapper(afm, min_n_clones=2, max_n_clones=None,
     n_clones = knee
 
     # Refit with optimal n_clones
-    _model = BinomMixtureVB(n_var=AD.shape[0], n_cell=AD.shape[1], n_donor=n_clones)
-    _model.fit(AD, DP, min_iter=30, n_init=50, max_iter=500, max_iter_pre=250, random_seed=random_seed)
-    
-    # Clonal assignment probabilites --> to crisp labels
-    clonal_assignment = _model.ID_prob
-    df_ass = pd.DataFrame(
-        clonal_assignment, 
-        index=afm.obs_names, 
-        columns=range(clonal_assignment.shape[1])
-    )
-
-    # Define labels
-    labels = []
-    for i in range(df_ass.shape[0]):
-        cell_ass = df_ass.iloc[i, :]
-        try:
-            labels.append(np.where(cell_ass>p_treshold)[0][0])
-        except:
-            labels.append('unassigned')
+    model = fit_vireo(AD, DP, n_clones, random_seed=random_seed)
+    labels = prob_to_crisp_labels(afm, model, p_treshold=p_treshold)
 
     return pd.Series(labels, index=afm.obs_names)
 
