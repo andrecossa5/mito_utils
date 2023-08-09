@@ -38,11 +38,13 @@ axins_pos = {
     'h1' : ( (0.05,.95,.22,.01), 'bottom' ),
     'h4' : ( (0.05,.05,.22,.01), 'top' ),
 
-    'outside' : ( (1.05,.25,.1,.5), 'right' )
+    'outside' : ( (1.05,.25,.03,.5), 'right' )
 }
 
 
+
 ##
+
 
 def create_handles(categories, marker='o', colors=None, size=10, width=0.5):
     """
@@ -69,23 +71,23 @@ def create_handles(categories, marker='o', colors=None, size=10, width=0.5):
 ##
 
 
-def add_cbar(x, color='viridis', ax=None, label_size=7, ticks_size=5, 
-    label=None, orientation='v', pos=2):
+def add_cbar(x, palette='viridis', ax=None, label_size=7, ticks_size=5, 
+    vmin=None, vmax=None, label=None, layout='outside'):
     """
     Draw cbar on an axes object inset.
     """
-    if pos == 'outside':
-        pos, xticks_position = axins_pos[pos]
-        orientation = 'vertical'
+    orientation = 'vertical'
+    if layout in axins_pos:
+        pos, xticks_position = axins_pos[layout]
     else:
-        if pos in axins_pos:
-            pos, xticks_position = axins_pos[orientation+str(pos)]
-            orientation = 'vertical' if orientation == 'v' else 'horizontal'
-        else:
-            pos, xticks_position = pos 
-            orientation = 'vertical' if orientation == 'v' else 'horizontal'
-    cmap = matplotlib.colormaps[color]
-    norm = matplotlib.colors.Normalize(vmin=np.percentile(x, q=5), vmax=np.percentile(x, q=95))
+        pos, xticks_position = layout
+        
+    cmap = matplotlib.colormaps[palette]
+    if vmin is None and vmax is None:
+        norm = matplotlib.colors.Normalize(
+            vmin=np.percentile(x, q=25), vmax=np.percentile(x, q=75))
+    else:
+        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     axins = ax.inset_axes(pos) 
     cb = plt.colorbar(matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap), 
         cax=axins, orientation=orientation, ticklocation=xticks_position
@@ -103,28 +105,19 @@ def add_cbar(x, color='viridis', ax=None, label_size=7, ticks_size=5,
 
 
 def add_legend(label=None, colors=None, ax=None, loc='center', artists_size=7, label_size=7, 
-    ticks_size=5, bbox_to_anchor=(0.5, 1.1), ncols=None, only_top='all'):
+    ticks_size=5, bbox_to_anchor=(0.5, 1.1), ncols=1, only_top='all'):
     """
     Draw a legend on axes object.
     """
     if only_top != 'all':
         colors = { k : colors[k] for i, k in enumerate(colors) if i < int(only_top) }
-        
-    if ncols is None:
-        ncols = len(colors) // 2 + 1
-    title = label.capitalize() if label is not None else None
+    title = label if label is not None else None
 
     handles = create_handles(colors.keys(), colors=colors.values(), size=artists_size)
     ax.legend(
-        handles, 
-        colors.keys(), 
-        title=title, 
-        loc=loc, 
-        bbox_to_anchor=bbox_to_anchor,
-        ncol=ncols,
-        fontsize=ticks_size, 
-        title_fontsize=label_size, 
-        frameon=False
+        handles, colors.keys(), frameon=False, loc=loc, fontsize=ticks_size, 
+        title_fontsize=label_size, ncol=ncols, title=title, 
+        bbox_to_anchor=bbox_to_anchor
     )
 
 
@@ -204,7 +197,7 @@ def find_n_rows_n_cols(n_axes, n_cols=None):
 def format_ax(ax, title='', xlabel='', ylabel='', 
     xticks=None, yticks=None, rotx=0, roty=0, 
     xlabel_size=None, ylabel_size=None, xticks_size=None, 
-    yticks_size=None, title_size=None, log=False
+    yticks_size=None, title_size=None, log=False, reduced_spines=False
     ):
     """
     Format labels, ticks and stuff.
@@ -236,6 +229,9 @@ def format_ax(ax, title='', xlabel='', ylabel='',
 
     if title_size is not None:
         ax.set_title(title, fontdict={'fontsize': title_size})
+    
+    if reduced_spines:
+        ax.spines[['right', 'top']].set_visible(False)
 
     return ax
 
@@ -267,7 +263,8 @@ def line(df, x, y, c='r', s=1, l=None, ax=None):
 ##
 
 
-def scatter(df, x, y, by=None, c='r', s=1.0, a=1, l=None, ax=None, scale_x=None, ordered=False):
+def scatter(df, x, y, by=None, c='r', s=1.0, a=1, l=None, ax=None, scale_x=None, 
+            vmin=None, vmax=None, ordered=False):
     """
     Base scatter plot.
     """
@@ -287,16 +284,18 @@ def scatter(df, x, y, by=None, c='r', s=1.0, a=1, l=None, ax=None, scale_x=None,
         ax.scatter(df[x], df[y], color=c, label=l, marker='.', s=size, alpha=a)
 
     elif isinstance(c, str) and by is not None:
-        ax.scatter(df[x], df[y], c=df[by], label=l, marker='.', s=size, 
-            cmap=c, alpha=a)
+        
+        vmin = vmin if vmin is not None else np.percentile(df[by],25)
+        vmax = vmax if vmax is not None else np.percentile(df[by],75)
+        ax.scatter(df[x], df[y], c=df[by], cmap=c, vmin=vmin, vmax=vmax, label=l, marker='.', s=size, alpha=a)
 
     elif isinstance(c, dict) and by is not None:
-        #assert all([ x in c for x in df[by].unique() ])
+        assert all([ x in c for x in df[by].unique() ])
         colors = [ c[x] for x in df[by] ]
         ax.scatter(df[x], df[y], c=colors, label=l, marker='.', s=size, alpha=a)
 
     else:
-        raise ValueError('c needs to be specified as a dict of colors with "by", or a single color.')
+        raise ValueError('c needs to be specified as a dict of colors with "by" of a single color.')
 
     return ax
 
@@ -464,12 +463,12 @@ def violin(df, x, y, by=None, c=None, a=1, l=None, ax=None, with_stats=False, or
     }
     
     if isinstance(c, str):
-        ax = sns.violinplot(data=df, x=x, y=y, color=c, ax=ax, saturation=0.7, order=order, **params) 
+        ax = sns.violinplot(data=df, x=x, y=y, color=c, ax=ax, saturation=.7, order=order, **params) 
         ax.set(xlabel='', ylabel='')
         ax.set_xticklabels(np.arange(df[x].unique().size))
 
     elif isinstance(c, dict) and by is None:
-        ax = sns.violinplot(data=df, x=x, y=y, palette=c.values(), ax=ax, saturation=0.7, order=order, **params)
+        ax = sns.violinplot(data=df, x=x, y=y, palette=c.values(), ax=ax, saturation=.7, order=order, **params)
         ax.set(xlabel='', ylabel='') 
         ax.set_xticklabels(np.arange(df[x].unique().size))
             
@@ -594,41 +593,6 @@ def rank_plot(df, cov=None, ascending=False, n_annotated=25, title=None, ylabel=
     return ax
 
 
-
-##
-
-
-# def prep_things_for_umap(top_runs_per_sample, i, solutions, connectivities, path_main=None):
-#     """
-#     Utility used in leiden performance viz.
-#     """
-#     # Get top solutions
-#     d_run = top_runs_per_sample.iloc[i, :].to_dict()
-# 
-#     # Prepare ingredients for embs calculations
-#     s = d_run['sample']
-#     a = '_'.join(d_run['analysis'].split('_')[1:])
-# 
-#     path_ = path_main + f'results_and_plots/classification_performance/top_3/{s}/{a}/cell_x_var_hclust.pickle'
-# 
-#     with open(path_, 'rb') as f:
-#         d_cell_x_var = pickle.load(f)
-# 
-#     cells = d_cell_x_var['cells']
-#     variants = d_cell_x_var['vars']
-# 
-#     afm = read_one_sample(path_main, sample=s)
-#     X = afm[cells, variants].X.copy()
-# 
-#     conn_name = f'{d_run["analysis"]}_{d_run["with_nans"]}_{d_run["metric"]}_None'
-#     leiden_pickle_name = f'{d_run["analysis"]}_{d_run["with_nans"]}_{d_run["metric"]}_None|{d_run["k"]}|{d_run["res"]}'
-# 
-#     labels, true_clones, ARI = solutions[s][leiden_pickle_name]
-#     conn = connectivities[s][conn_name]
-# 
-#     return X, conn, cells, true_clones, labels, ARI, d_run
-
-
 ##
 
 
@@ -736,4 +700,4 @@ def packed_circle_plot(df, covariate=None, ax=None, color='b', alpha=0.4,
     return ax
 
 
-##
+##z

@@ -615,8 +615,7 @@ def viz_clone_variants(afm, clone_name, sample=None, path=None, filtering=None,
 ##
 
 
-
-def plot_exclusive_variant(a_cells, var, vois_df):
+def plot_exclusive_variant(a_cells, var, vois_df, ax=None):
 
     idx = np.argsort(a_cells[:, var].X.toarray().flatten())
     a_cells = a_cells[idx, :]
@@ -625,15 +624,14 @@ def plot_exclusive_variant(a_cells, var, vois_df):
     p = (first_m_zero / x.size) * 100
     VMR_rank = vois_df.loc[var, 'VMR_rank']
 
-    fig, ax = plt.subplots(figsize=(5,5))
-    ax.plot(x, 'k-')
+    ax.plot(x, 'k.-')
     ax.set(
         title=f'Percentile 1st>0 {round(p)}th, VMR rank {VMR_rank}', 
         xlabel='Cell rank', 
         ylabel='AF'
     )
 
-    return fig
+    return ax
 
 
 

@@ -145,3 +145,5 @@ def ji(x, y):
     ji = len(x&y) / len(x|y)
 
     return ji
+
+

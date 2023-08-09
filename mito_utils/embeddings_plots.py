@@ -3,14 +3,8 @@ _plotting.py stores plotting functions called by the pipeline itself. They all r
 NB: we may decide to split everything in its submodule (i.e., one for preprocessing, ecc..)
 """
 
-import re
-import numpy as np 
-import pandas as pd 
 import scanpy as sc
-import matplotlib
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-import seaborn as sns 
 plt.style.use('default')
 
 from .colors import *
@@ -33,8 +27,7 @@ def format_draw_embeddings(
     format_kwargs = { k : axes_params[k] for k in axes_params if k not in not_format_keys }
 
     if title is None:
-        cov = cat if cat is not None else cont 
-        title = cov.capitalize()
+        title = cat if cat is not None else cont 
     else:
         assert isinstance(title, str)
 
@@ -47,7 +40,7 @@ def format_draw_embeddings(
     
     if axes_params['legend'] and cat is not None:
         if 'label' not in legend_params or legend_params['label'] is None:
-            legend_params['label'] = cat.capitalize()
+            legend_params['label'] = cat
         add_legend(ax=ax, **legend_params)
     
     elif axes_params['cbar'] and cont is not None:
@@ -99,12 +92,12 @@ def draw_embeddings(
     """
 
     cbar_params={
-        'color' : 'viridis',
-        'value_range' : (0, .05),
+        'palette' : 'viridis',
+        'vmin': None,
+        'vmax':None,
         'label_size' : 8, 
         'ticks_size' : 6,  
-        'pos' : 2,
-        'orientation' : 'v'
+        'layout' : 'outside'
     }
 
     legend_params={
@@ -160,7 +153,8 @@ def draw_embeddings(
     elif cat is None and cont is not None:
         
         if query is None:
-            scatter(df, x=x, y=y, by=cont, c=cbar_params['color'], ax=ax, s=s)
+            scatter(df, x=x, y=y, by=cont, c=cbar_params['palette'], 
+                    vmin=cbar_params['vmin'], vmax=cbar_params['vmax'], ax=ax, s=s)
             format_draw_embeddings(ax, df, x, y, title=title, cont=cont, axes_params=axes_params)
         else:
             if isinstance(query, str):
@@ -169,7 +163,8 @@ def draw_embeddings(
                 subset = query
             if subset.size > 0:
                 scatter(df.loc[~df.index.isin(subset), :], x=x, y=y, c='darkgrey', ax=ax, s=s/3)
-                scatter(df.loc[subset, :], x=x, y=y, by=cont, c=cbar_params['color'], ax=ax, s=s)
+                scatter(df.loc[subset, :], x=x, y=y, by=cont, c=cbar_params['palette'], 
+                        vmin=cbar_params['vmin'], vmax=cbar_params['vmax'], ax=ax, s=s)
                 format_draw_embeddings(
                     ax, df.loc[subset, :], x, y, title=title, cont=cont, axes_params=axes_params
                 )
