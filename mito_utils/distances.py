@@ -206,9 +206,6 @@ def evaluate_metric_with_gt(a, metric, labels, **kwargs):
     final = {}
     D = pair_d(a, metric=metric)
 
-    s = a.obs['it'].astype('category')
-    s.cat.categories
-
     for alpha in np.linspace(0,1,10):
         
         print(f'Computing together/separate cell pairs: alpha {alpha:.2f}...')
@@ -217,7 +214,6 @@ def evaluate_metric_with_gt(a, metric, labels, **kwargs):
         gt_list = []
 
         for i in range(D.shape[0]):
-
             x = rescale(D[i,:])
             p_list.append(np.where(x<=alpha, 1, 0))
             c = labels.cat.codes.values[i]
