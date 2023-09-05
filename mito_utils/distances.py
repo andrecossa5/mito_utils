@@ -5,6 +5,7 @@ Module to create custom distance function among cell AF profiles.
 import numpy as np
 import pandas as pd
 
+from anndata import AnnData
 from itertools import product
 from scipy.spatial.distance import sqeuclidean, cosine, correlation
 from scipy.spatial.distance import euclidean as euclidean_std
@@ -167,8 +168,14 @@ def pair_d(a, **kwargs):
 
     print(f'pair_d arguments: metric={metric}, ncores={ncores}, nans={nans}')
     
-    # Filter possible duplicate variants per position
-    X, cov = prep_X_cov(a)
+    # Prep afm matrix (optionally coverage matrix also)
+    if metric == 'ludwig2019':
+        if not isinstance(a, AnnData):
+            raise TypeError(f'a must be an AnnData to use metric {metric}')
+        else:
+            X, cov = prep_X_cov(a)
+    else:
+        X = a
     
     # Compute D
     if not nans:

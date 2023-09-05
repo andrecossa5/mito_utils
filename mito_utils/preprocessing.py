@@ -11,9 +11,10 @@ import pandas as pd
 import scanpy as sc
 import anndata
 from mquad.mquad import *
-from scipy.sparse import coo_matrix, csc_matrix
+from scipy.sparse import coo_matrix, csc_matrix, issparse
 from pegasus.tools.hvf_selection import fit_loess
 
+from mito_utils.it_diagnostics import rank_clone_variants
 
 ##
 
@@ -536,6 +537,42 @@ def get_AD_DP(afm, to='coo'):
 ##
 
 
+def bootstrap_allele_tables(ad, dp, frac=.8):
+    """
+    Bootstrapping of ad and dp count tables. ad --> alternative counts
+    dp --> coverage at that site. NB: AD and DP are assumed in for cells x variants. 
+    Both sparse matrices and dense arrays can be passed.
+    """
+
+    ad = ad if not issparse(ad) else ad.A
+    dp = dp if not issparse(dp) else dp.A
+    new_ad = np.zeros(ad.shape)
+    new_dp = np.zeros(ad.shape)
+
+    for j in range(ad.shape[1]): # Iterate on variants
+
+        alt_counts = ad[:,j]
+        ref_counts = dp[:,j] - ad[:,j]
+
+        for i in range(ad.shape[0]): # Iterate on cells
+
+            observed_alleles = np.concatenate([
+                np.ones(alt_counts[i]), 
+                np.zeros(ref_counts[i])
+            ])
+
+            n = round(observed_alleles.size*frac)
+            new_alt_counts = np.random.choice(observed_alleles, n, replace=True).sum() 
+
+            new_dp[i,j] = n
+            new_ad[i,j] = new_alt_counts
+
+    return new_ad, new_dp
+
+
+##
+
+
 def fit_MQuad_mixtures(afm, n=None, path_=None, nproc=1, minDP=10, minAD=1, with_M=False):
     """
     Filter variants using the Mquad method.
@@ -776,6 +813,45 @@ def filter_cells_and_vars(
                 )
 
     logger.info(f'Filtered feature matrix contains {a.shape[0]} cells and {a.shape[1]} variants.')
+
+    return a_cells, a
+
+
+##
+
+
+def filter_afm_with_gt(afm, t=.75, rest=.25, min_cells_clone=10):
+    """
+    Given an afm matrix with a <cov> columns in .obs wich correspond to 
+    ground truth clones, filter cells and vars.
+    """
+    a_cells = filter_cells_coverage(afm)
+    a_cells = filter_baseline(a_cells)
+
+    gt_l = [
+        rank_clone_variants(
+            a_cells, var='GBC', group=g, rank_by='custom_perc_tresholds',
+            min_clone_perc=t, max_perc_rest=rest
+        ).assign(clone=g)
+        for g in a_cells.obs['GBC'].unique()
+    ]
+    df_gt = pd.concat(gt_l).join(summary_stats_vars(a_cells))
+
+    vois_df = (
+        df_gt
+        .query('n_cells_clone>@min_cells_clone')
+        .sort_values('log2_perc_ratio', ascending=False)
+        .loc[:, 
+            [
+                'median_AF_clone', 'median_AF_rest', 'perc_clone', 
+                'perc_rest', 'log2_perc_ratio', 'n_cells_clone', 'clone'
+            ]
+        ]
+    )
+    vois = vois_df.index.unique()
+    cells = a_cells.obs['GBC'].loc[lambda x: x.isin(vois_df['clone'])].index
+
+    a_cells, a = filter_cells_and_vars(afm, cells=cells, variants=vois)
 
     return a_cells, a
 
