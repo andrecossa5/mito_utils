@@ -42,7 +42,6 @@ axins_pos = {
 }
 
 
-
 ##
 
 
@@ -89,6 +88,7 @@ def add_cbar(x, palette='viridis', ax=None, label_size=7, ticks_size=5,
     else:
         norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     axins = ax.inset_axes(pos) 
+    
     cb = plt.colorbar(matplotlib.cm.ScalarMappable(norm=norm, cmap=cmap), 
         cax=axins, orientation=orientation, ticklocation=xticks_position
     )

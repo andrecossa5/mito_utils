@@ -537,42 +537,6 @@ def get_AD_DP(afm, to='coo'):
 ##
 
 
-def bootstrap_allele_tables(ad, dp, frac=.8):
-    """
-    Bootstrapping of ad and dp count tables. ad --> alternative counts
-    dp --> coverage at that site. NB: AD and DP are assumed in for cells x variants. 
-    Both sparse matrices and dense arrays can be passed.
-    """
-
-    ad = ad if not issparse(ad) else ad.A
-    dp = dp if not issparse(dp) else dp.A
-    new_ad = np.zeros(ad.shape)
-    new_dp = np.zeros(ad.shape)
-
-    for j in range(ad.shape[1]): # Iterate on variants
-
-        alt_counts = ad[:,j]
-        ref_counts = dp[:,j] - ad[:,j]
-
-        for i in range(ad.shape[0]): # Iterate on cells
-
-            observed_alleles = np.concatenate([
-                np.ones(alt_counts[i]), 
-                np.zeros(ref_counts[i])
-            ])
-
-            n = round(observed_alleles.size*frac)
-            new_alt_counts = np.random.choice(observed_alleles, n, replace=True).sum() 
-
-            new_dp[i,j] = n
-            new_ad[i,j] = new_alt_counts
-
-    return new_ad, new_dp
-
-
-##
-
-
 def fit_MQuad_mixtures(afm, n=None, path_=None, nproc=1, minDP=10, minAD=1, with_M=False):
     """
     Filter variants using the Mquad method.
