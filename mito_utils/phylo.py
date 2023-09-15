@@ -289,3 +289,28 @@ def get_expanded_clones(tree, t=.05, min_depth=3, min_clade_size=None):
     return expanding_nodes
 
 
+##
+
+
+def AFM_to_seqs(a, t=.1, method='simple_treshold'):
+    """
+    Funtion to converta an AFM to a dictionary of sequences.
+    """
+
+    # Extract ref and alt character sequences
+    L = [ x.split('_')[1].split('>') for x in a.var_names ]
+    ref = ''.join([x[0] for x in L])
+    alt = ''.join([x[1] for x in L])
+
+    # Build a ncells x nvar binary allele matrix using some method
+    if method == 'simple_treshold':
+        M = np.where(a.X>t, 1, 0)
+
+    # Convert to a dict of strings
+    d = {}
+    for i, cell in enumerate(a.obs_names):
+        m_ = M[i,:]
+        seq = [ alt[j] if char == 1 else ref[j] for j, char in enumerate(m_) ]
+        d[cell] = ''.join(seq)
+
+    return d
