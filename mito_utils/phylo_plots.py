@@ -224,6 +224,7 @@ def plot_tree(
     vmin=None, 
     vmax=None,
     leaf_size=0,
+    leaf_names=False,
     internal_node_size=10,
     annot_size=5,
     clade_colors={},
@@ -321,6 +322,9 @@ def plot_tree(
         if len(node_annot)>0 and node in node_annot:
             text = node_annot[node][0]
             ax.text(x, y, str(text), ha='center', va='top', fontsize=annot_size)
+
+        if tree.is_leaf(node) and leaf_names:
+            ax.text(x, y, str(node), ha='center', va='top', fontsize=annot_size)
 
         if tree.is_leaf(node):
             _leaf_kwargs["x"].append(x)
