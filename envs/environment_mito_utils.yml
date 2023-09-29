@@ -99,3 +99,4 @@ dependencies:
       - vireosnp==0.5.8
       - shap 
       - circlify
+      - cassiopeia

@@ -10,9 +10,11 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import anndata
+import scipy.stats as stats
 from mquad.mquad import *
 from scipy.sparse import coo_matrix, csc_matrix, issparse
 from pegasus.tools.hvf_selection import fit_loess
+from itertools import chain
 
 from mito_utils.it_diagnostics import rank_clone_variants
 
@@ -27,7 +29,7 @@ filtering_options = [
     'seurat', 
     'pegasus', 
     'MQuad', 
-    #'DADApy',
+    'MQuad_optimized',
     'density'
 ]
 
@@ -592,6 +594,87 @@ def filter_Mquad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None, n=None)
 ##
 
 
+def z_test_vars_into_bins(delta, alpha=0.05):
+    """
+    Perform a z-test on each deltaBIC value within a bin.
+    """
+
+    delta = delta.loc[lambda x: ~x.isna()]
+    z_scores = ( delta-delta.mean() ) / ( delta.std() / (delta.shape[0] ** 0.5) )
+    critical_z_value = stats.norm.ppf(1-alpha)
+    variants = z_scores.loc[lambda x: x>critical_z_value].index.to_list()
+
+    return variants
+    
+
+##
+
+
+def calc_median_AF_in_positives(afm, candidates):
+
+    median_af = []
+    for x in candidates:
+        idx = afm[:, x].X.toarray().flatten()>0
+        median_af.append(np.median(afm[idx, x].X, axis=0)[0])
+
+    return np.array(median_af)
+    
+
+##
+
+
+def filter_from_bins(df, afm, min_f, max_f, treshold_AF=.05, n_bins=10):
+        
+    bins = np.linspace(min_f, max_f, n_bins+1)
+    df['bin'] = pd.cut(
+        df['fr_pos_cells'], bins=bins, include_lowest=True, labels=False
+    )
+    var_l = df.groupby('bin').apply(lambda x: z_test_vars_into_bins(x['deltaBIC']))
+    candidates = list(chain.from_iterable(var_l))
+    test = calc_median_AF_in_positives(afm, candidates)>=treshold_AF
+    filtered_candidates = pd.Series(candidates)[test].to_list()
+    
+    return filtered_candidates
+
+
+##
+
+
+def filter_Mquad_optimized(afm, nproc=8, minDP=10, minAD=1, path_=None,
+    split_t=.2, treshold_AF_high=.05, treshold_AF_low=.025, n_bins=10
+    ):
+    """
+    Filter variants using the Mquad method, optimized version.
+    """
+    df, M, ad_vars = fit_MQuad_mixtures(
+        afm, path_=path_, nproc=nproc, minDP=minDP, minAD=minAD, with_M=True, 
+    )
+
+    # Split into high and low
+    df['fr_pos_cells'] = df['num_cells_nonzero_AD'] / afm.shape[0]
+    df['fr_pos_cells'] = df['fr_pos_cells'].astype('float')
+    df['deltaBIC'] = df['deltaBIC'].astype('float')
+
+    # Get vars
+    high_vars = filter_from_bins(
+        df.query('fr_pos_cells>=@split_t').copy(), 
+        afm, split_t, 1, treshold_AF=treshold_AF_high, n_bins=n_bins
+    )
+    low_vars = filter_from_bins(
+        df.query('fr_pos_cells<@split_t').copy(), 
+        afm, 0, split_t, treshold_AF=treshold_AF_low, n_bins=n_bins
+    )
+
+    # Subset matrix
+    filtered = afm[:, high_vars+low_vars].copy()
+    filtered = remove_excluded_sites(filtered) # Remove sites
+
+    return filtered
+
+
+##
+
+
 def filter_DADApy(afm):
     """
     Filter using DADApy.
@@ -659,7 +742,7 @@ def filter_density(afm, density=0.5, steps=np.Inf):
 def filter_cells_and_vars(
     afm, blacklist=None, sample=None, filtering=None, min_cell_number=0, 
     filter_cells=True, min_cov_treshold=50, variants=None, cells=None, 
-    nproc=8, path_=None, n=1000, prefilter_MQuad=False):
+    nproc=8, path_=None, n=1000, prefilter_MQuad=False, **kwargs):
     """
     Filter cells and vars from an afm.
     """ 
@@ -710,6 +793,8 @@ def filter_cells_and_vars(
         elif filtering == 'MQuad':
             n = None if not prefilter_MQuad else n
             a = filter_Mquad(a_cells, nproc=nproc, path_=path_, n=n)
+        elif filtering == 'MQuad_optimized':
+            a = filter_Mquad_optimized(a_cells, nproc=nproc, path_=path_, **kwargs)
         elif filtering == 'DADApy':
             a = filter_DADApy(a_cells)
 
