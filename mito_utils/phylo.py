@@ -116,8 +116,8 @@ def jackknife_allele_tables(ad, dp):
 ##
 
 
-def build_tree(a, X=None, M=None, D=None, variants=None, metric='cosine', 
-                solver=None, solver_kwargs={}):
+def build_tree(a=None, M=None, D=None, t=.025, metric='cosine', 
+                solver=None, ncores=8, solver_kwargs={}):
     """
     Wrapper for tree building.
     """
@@ -134,26 +134,22 @@ def build_tree(a, X=None, M=None, D=None, variants=None, metric='cosine',
     solver_kwargs = solver_kwargs_d[solver]
 
     # Compute char and distance matrices
-    X = a.X if X is None else X
-
+    X = a.X
     if M is None:
         M = pd.DataFrame(
-            np.where(X>.1, 1, 0),
+            np.where(X>=t, 1, 0),
             index=a.obs_names,
-            columns=a.var_names if variants is None else variants
+            columns=a.var_names
         )
     if D is None:
         D = pd.DataFrame(
-            pair_d(X if X is not None else a, metric=metric),
+            pair_d(X, ncores=ncores, metric=metric),
             index=a.obs_names,
             columns=a.obs_names
         )
-
-    tree = cs.data.CassiopeiaTree(
-        character_matrix=M, 
-        dissimilarity_map=D, 
-        cell_meta=a.obs
-    )
+    
+    # Compute tree
+    tree = cs.data.CassiopeiaTree(character_matrix=M, dissimilarity_map=D, cell_meta=a.obs)
     solver = _solver(**solver_kwargs)
     solver.solve(tree)
 

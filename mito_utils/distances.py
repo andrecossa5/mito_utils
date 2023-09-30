@@ -148,7 +148,7 @@ def prep_X_cov(a):
 ##
 
 
-def pair_d(a, **kwargs):
+def pair_d(a, ncores=8, **kwargs):
     """
     Function for calculating pairwise distances within the row vectors of a matrix X.
     """
