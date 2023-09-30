@@ -136,17 +136,12 @@ def build_tree(a=None, M=None, D=None, t=.025, metric='cosine',
     # Compute char and distance matrices
     X = a.X
     if M is None:
-        M = pd.DataFrame(
-            np.where(X>=t, 1, 0),
-            index=a.obs_names,
-            columns=a.var_names
-        )
+        M = np.where(X>=t, 1, 0)
+        M = pd.DataFrame(M, index=a.obs_names, columns=a.var_names)
     if D is None:
-        D = pd.DataFrame(
-            pair_d(X, ncores=ncores, metric=metric),
-            index=a.obs_names,
-            columns=a.obs_names
-        )
+        D = pair_d(X, ncores=ncores, metric=metric)
+        D[np.isnan(D)] = 0
+        D = pd.DataFrame(D, index=a.obs_names, columns=a.obs_names)
     
     # Compute tree
     tree = cs.data.CassiopeiaTree(character_matrix=M, dissimilarity_map=D, cell_meta=a.obs)
