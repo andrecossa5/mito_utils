@@ -155,6 +155,8 @@ def pair_d(a, ncores=8, **kwargs):
     # Get kwargs
     try:
         metric = kwargs['metric']
+        if metric is None or metric == 'None':
+            metric = 'cosine'
     except:
         metric = 'euclidean'
     try:
@@ -175,7 +177,10 @@ def pair_d(a, ncores=8, **kwargs):
         else:
             X, cov = prep_X_cov(a)
     else:
-        X = a
+        if isinstance(a, AnnData):
+            X, cov = prep_X_cov(a)
+        else:
+            X = a
     
     # Compute D
     if not nans:
