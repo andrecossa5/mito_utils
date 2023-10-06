@@ -9,6 +9,8 @@ import scanpy as sc
 import leidenalg
 from scipy.special import binom
 from scipy.stats import fisher_exact
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import squareform
 from statsmodels.sandbox.stats.multicomp import multipletests
 
 
@@ -161,3 +163,16 @@ def compute_clonal_fate_bias(df, state_column, clone_column, target_state):
     }).sort_values('fate_bias', ascending=False)
 
     return results
+
+
+##
+
+
+def fast_hclust_distance(D):
+    
+    D[np.isnan(D)] = 0                               
+    D[np.diag_indices(D.shape[0])] = 0
+    linkage_matrix = linkage(squareform(D), method='weighted')
+    order = leaves_list(linkage_matrix)
+
+    return order
