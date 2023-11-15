@@ -148,7 +148,7 @@ def prep_X_cov(a):
 ##
 
 
-def pair_d(a, ncores=8, **kwargs):
+def pair_d(a, ncores=8, t=0.025, **kwargs):
     """
     Function for calculating pairwise distances within the row vectors of a matrix X.
     """
@@ -186,7 +186,7 @@ def pair_d(a, ncores=8, **kwargs):
     if not nans:
         
         if metric in ['jaccard', 'matching']:
-            X = np.where(X>0, 1, 0)
+            X = np.where(X>t, 1, 0)
             D = pairwise_distances(X, metric=metric, n_jobs=ncores)
         elif metric == 'ludwig2019':
             D = ludwig_distances(X, cov, n_jobs=ncores, **kwargs)

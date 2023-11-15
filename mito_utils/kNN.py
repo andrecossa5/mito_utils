@@ -1,5 +1,5 @@
 """
-_neighbors.py: nearest neighbors functions.
+_neighbors.py: nearest neighbors utils.
 """
 
 from joblib import cpu_count
