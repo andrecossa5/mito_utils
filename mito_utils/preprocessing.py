@@ -128,11 +128,13 @@ def read_one_sample(path_data, sample=None, only_variants=True, with_GBC=False):
     """
     Read and format one sample AFM.
     """
+    sample = 'AML_clones'
     A = sc.read(os.path.join(path_data, sample, 'AFM.h5ad'))
     barcodes = pd.read_csv(os.path.join(path_data, sample, 'barcodes.txt'), index_col=0)
 
     # Filter cell barcodes
     valid_cbcs = set(A.obs_names) & set(barcodes.index)
+
     # GBC info
     if with_GBC:
         cbc_gbc_df = pd.read_csv(
