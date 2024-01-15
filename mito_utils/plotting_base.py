@@ -9,17 +9,12 @@ import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D 
-from matplotlib.backends.backend_pdf import PdfPages
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-
-import seaborn as sns 
+from circlify import circlify, Circle
 from statannotations.Annotator import Annotator 
 import textalloc as ta
-from circlify import _bubbles, circlify, Circle
-
-from .utils import *
-from .colors import *
-plt.style.use('default')
+from plotting_utils._plotting_base import *
+from plotting_utils._utils import *
+from plotting_utils._colors import *
 
 
 ##
@@ -636,27 +631,24 @@ def bb_plot(df, cov1=None, cov2=None, show_y=True, legend=True, colors=None,
         return ax, data
     else:
         return ax
-    
+
 
 ##
 
-   
-def packed_circle_plot(df, covariate=None, ax=None, color='b', alpha=0.4,
-        annotate=False, fontsize=5, colors_dict=None, 
-        annot_treshold=0.1, spacing=0.95, linewidth=1.3,
-        edgecolor=None, names_to_annotate=None
+        
+def packed_circle_plot(
+    df, covariate=None, ax=None, color='b', cmap=None, alpha=.5, linewidth=1.2,
+    t_cov=.01, annotate=False, fontsize=6
     ):
     """
     Circle plot. Packed.
     """
-    
     df = df.sort_values(covariate, ascending=False)
     circles = circlify(
         df[covariate].to_list(),
         show_enclosure=True, 
         target_enclosure=Circle(x=0, y=0, r=1)
     )
-    
     lim = max(
         max(
             abs(c.x) + c.r,
@@ -667,37 +659,34 @@ def packed_circle_plot(df, covariate=None, ax=None, color='b', alpha=0.4,
     ax.set_xlim(-lim, lim)
     ax.set_ylim(-lim, lim)
     
+    if isinstance(color, str) and not color in df.columns:
+        colors = { k : color for k in df.index }
+    elif isinstance(color, str) and color in df.columns:
+        colors = create_palette(df, covariate, cmap)
+    else:
+        assert isinstance(color, dict)
+        colors = color
+        print('Try to use custom colors...')
+
     for name, circle in zip(df.index[::-1], circles): # Don't know why, but it reverses...
         x, y, r = circle
-        color = colors_dict[name] if colors_dict is not None else color
         ax.add_patch(
-            plt.Circle((x, y), r*spacing, alpha=alpha, linewidth=linewidth, 
-                fill=True, 
-                edgecolor=edgecolor if edgecolor is not None else color, 
-                facecolor=color
-            )
+            plt.Circle((x, y), r*0.95, alpha=alpha, linewidth=linewidth, 
+                fill=True, edgecolor=colors[name], facecolor=colors[name])
         )
-        
         if annotate:
             cov = df.loc[name, covariate]
-            if names_to_annotate is None:
-                if cov > annot_treshold:
-                    ax.annotate(
-                        f'{name[:5]}: {df.loc[name, covariate]:.2f}', 
-                        (x,y), 
-                        va='center', ha='center', fontsize=fontsize
-                    )
-            else:
-                if name in names_to_annotate:
-                    ax.annotate(
-                        f'{name[:5]}: {df.loc[name, covariate]:.2f}', 
-                        (x,y), 
-                        va='center', ha='center', fontsize=fontsize
-                    )
+            if cov > t_cov:
+                n = name if len(name)<=5 else name[:5]
+                ax.annotate(
+                    f'{n}: {df.loc[name, covariate]:.2f}', 
+                    (x,y), 
+                    va='center', ha='center', fontsize=fontsize
+                )
 
     ax.axis('off')
     
     return ax
 
 
-##z
+##
