@@ -157,8 +157,10 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
         with_GBC=with_GBC
     )
     afm.obs = afm.obs.assign(sample=sample)
-    afm.obs['GBC'] = afm.obs['GBC_Set']
-    afm.obs = afm.obs.drop(columns=['GBC_Set'])
+    
+    if with_GBC:
+        afm.obs['GBC'] = afm.obs['GBC_Set']
+        afm.obs = afm.obs.drop(columns=['GBC_Set'])
 
     return afm
 
