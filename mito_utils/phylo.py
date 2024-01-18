@@ -117,10 +117,8 @@ def bootstrap_allele_counts(ad, dp, frac=.8):
                 np.ones(alt_counts[i]), 
                 np.zeros(ref_counts[i])
             ])
-
             n = round(observed_alleles.size*frac)
             new_alt_counts = np.random.choice(observed_alleles, n, replace=True).sum() 
-
             new_dp[i,j] = n
             new_ad[i,j] = new_alt_counts
 
@@ -130,14 +128,14 @@ def bootstrap_allele_counts(ad, dp, frac=.8):
 ##
 
 
-def bootstrap_allele_tables(AD=None, DP=None, M=None):
+def bootstrap_allele_tables(ad=None, dp=None, M=None):
     """
     Bootstrapping of ad and dp count tables. ad --> alternative counts
     dp --> coverage at that site. NB: AD and DP are assumed in for cells x variants. 
     Both sparse matrices and dense arrays can be passed.
     """
 
-    if AD is not None and DP is not None:
+    if ad is not None and dp is not None:
 
         n = ad.shape[1]
         resampled_idx = np.random.choice(np.arange(n), n, replace=True)   
@@ -159,14 +157,14 @@ def bootstrap_allele_tables(AD=None, DP=None, M=None):
 ##
 
 
-def jackknife_allele_tables(AD=None, DP=None, M=None):
+def jackknife_allele_tables(ad=None, dp=None, M=None):
     """
     LOO of ad and dp count tables. ad --> alternative counts
     dp --> coverage at that site. NB: AD and DP are assumed in for cells x variants. 
     Both sparse matrices and dense arrays can be passed.
     """
 
-    if AD is not None and DP is not None:
+    if ad is not None and dp is not None:
 
         n = ad.shape[1]
         to_exclude = np.random.choice(np.arange(n), 1)[0]
@@ -293,7 +291,8 @@ def get_clades(tree, with_root=True, with_singletons=False):
     clades = { x : frozenset(tree.leaves_in_subtree(x)) for x in tree.internal_nodes }
 
     if not with_root:
-        del clades['root']
+        if 'root' in clades:
+            del clades['root']
 
     if with_singletons:
         for x in tree.leaves:
@@ -498,7 +497,6 @@ def calculate_TBE_II(obs_tree, tree_list, n_jobs=8):
     Calculate TBE from Lamoine et al., 2018 and the definition of transfer distance
     from the Hamming of clades bi-partition encodings.
     """
-
     leaves_order = obs_tree.leaves
     obs_clades = get_clades(obs_tree, with_root=False)
 
@@ -517,7 +515,7 @@ def calculate_TBE_II(obs_tree, tree_list, n_jobs=8):
 ##
 
 
-def calculate_supports(obs_tree, tree_list, method='tbe_I', n_jobs=8):
+def calculate_supports(obs_tree, tree_list, method='tbe_II', n_jobs=8):
     """
     Calculates internal nodes bootstrap support. Two algorithms
     implemented:
@@ -525,7 +523,6 @@ def calculate_supports(obs_tree, tree_list, method='tbe_I', n_jobs=8):
     - tbe: Transfer Bootstrap Expectations, transfer distance-based method, suitable
            for big phylogenies.
     """
-
     # FBP
     if method == 'fbp':
         supports = calculate_FBP(obs_tree, tree_list)

@@ -74,7 +74,7 @@ def format_matrix(A, cbc_gbc_df=None, with_GBC=True, only_variants=True):
 
     # Add labels to .obs
     if with_GBC and cbc_gbc_df is not None:
-        A.obs['GBC'] = pd.Categorical(cbc_gbc_df['GBC'])
+        A.obs['GBC_Set'] = pd.Categorical(cbc_gbc_df['GBC_set'])
 
     # For each position and cell, compute each base AF and quality tables
     A_cov, A_x, A_qual = create_one_base_tables(A, 'A', only_variants=only_variants)
@@ -124,7 +124,7 @@ def format_matrix(A, cbc_gbc_df=None, with_GBC=True, only_variants=True):
 ##
 
 
-def read_one_sample(path_data, sample=None, only_variants=True, with_GBC=False):
+def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC=True):
     """
     Read and format one sample AFM.
     """
@@ -133,6 +133,7 @@ def read_one_sample(path_data, sample=None, only_variants=True, with_GBC=False):
 
     # Filter cell barcodes
     valid_cbcs = set(A.obs_names) & set(barcodes.index)
+
     # GBC info
     if with_GBC:
         cbc_gbc_df = pd.read_csv(
@@ -156,6 +157,8 @@ def read_one_sample(path_data, sample=None, only_variants=True, with_GBC=False):
         with_GBC=with_GBC
     )
     afm.obs = afm.obs.assign(sample=sample)
+    afm.obs['GBC'] = afm.obs['GBC_Set']
+    afm.obs = afm.obs.drop(columns=['GBC_Set'])
 
     return afm
 
@@ -888,7 +891,7 @@ def filter_afm_with_gt(afm, t=.75, rest=.25, min_cells_clone=10):
 
     vois_df = (
         df_gt
-        .query('n_cells_clone>@min_cells_clone')
+        .query('n_cells_clone>=@min_cells_clone')
         .sort_values('log2_perc_ratio', ascending=False)
         .loc[:, 
             [
