@@ -23,17 +23,17 @@ from plotting_utils._colors import *
 # Params
 axins_pos = {
 
-    'v2' : ( (.95,.75,.01,.22), 'left' ),
-    'v3' : ( (.95,.05,.01,.22), 'left' ),
-    'v1' : ( (.05,.75,.01,.22), 'right' ),
-    'v4' : ( (.05,.05,.01,.22), 'right' ),
+    'v2' : ( (.95,.75,.01,.22), 'left', 'vertical' ),
+    'v3' : ( (.95,.05,.01,.22), 'left','vertical' ),
+    'v1' : ( (.05,.75,.01,.22), 'right', 'vertical' ),
+    'v4' : ( (.05,.05,.01,.22), 'right', 'vertical' ),
 
-    'h2' : ( (1-.27,.95,.22,.01), 'bottom' ),
-    'h3' : ( (1-.27,.05,.22,.01), 'top' ),
-    'h1' : ( (0.05,.95,.22,.01), 'bottom' ),
-    'h4' : ( (0.05,.05,.22,.01), 'top' ),
+    'h2' : ( (1-.27,.95,.22,.01), 'bottom', 'horizontal' ),
+    'h3' : ( (1-.27,.05,.22,.01), 'top', 'horizontal' ),
+    'h1' : ( (0.05,.95,.22,.01), 'bottom', 'horizontal' ),
+    'h4' : ( (0.05,.05,.22,.01), 'top', 'horizontal' ),
 
-    'outside' : ( (1.05,.25,.03,.5), 'right' )
+    'outside' : ( (1.05,.25,.03,.5), 'right', 'vertical' )
 }
 
 
@@ -66,15 +66,14 @@ def create_handles(categories, marker='o', colors=None, size=10, width=0.5):
 
 
 def add_cbar(x, palette='viridis', ax=None, label_size=7, ticks_size=5, 
-    vmin=None, vmax=None, label=None, layout='outside'):
+    vmin=None, vmax=None, label=None, layout='h1'):
     """
     Draw cbar on an axes object inset.
     """
-    orientation = 'vertical'
     if layout in axins_pos:
-        pos, xticks_position = axins_pos[layout]
+        pos, xticks_position, orientation = axins_pos[layout]
     else:
-        pos, xticks_position = layout
+        pos, xticks_position, orientation= layout
         
     cmap = matplotlib.colormaps[palette]
     if vmin is None and vmax is None:
@@ -92,8 +91,6 @@ def add_cbar(x, palette='viridis', ax=None, label_size=7, ticks_size=5,
         cb.ax.tick_params(axis="y", labelsize=ticks_size)
     else:
         cb.ax.tick_params(axis="x", labelsize=ticks_size)
-
-    return cb
     
 
 ##
@@ -638,8 +635,10 @@ def bb_plot(df, cov1=None, cov2=None, show_y=True, legend=True, colors=None,
         
 def packed_circle_plot(
     df, covariate=None, ax=None, color='b', cmap=None, alpha=.5, linewidth=1.2,
-    t_cov=.01, annotate=False, fontsize=6
+    t_cov=.01, annotate=False, fontsize=6, ascending=False, fontcolor='white', 
+    fontweight='normal'
     ):
+
     """
     Circle plot. Packed.
     """
@@ -662,7 +661,13 @@ def packed_circle_plot(
     if isinstance(color, str) and not color in df.columns:
         colors = { k : color for k in df.index }
     elif isinstance(color, str) and color in df.columns:
-        colors = create_palette(df, covariate, cmap)
+        c_cont = create_palette(
+            df.sort_values(color, ascending=True),
+            color, cmap
+        )
+        colors = {}
+        for name in df.index:
+            colors[name] = c_cont[df.loc[name, color]]
     else:
         assert isinstance(color, dict)
         colors = color
@@ -681,7 +686,8 @@ def packed_circle_plot(
                 ax.annotate(
                     f'{n}: {df.loc[name, covariate]:.2f}', 
                     (x,y), 
-                    va='center', ha='center', fontsize=fontsize
+                    va='center', ha='center', 
+                    fontweight=fontweight, fontsize=fontsize, color=fontcolor, 
                 )
 
     ax.axis('off')

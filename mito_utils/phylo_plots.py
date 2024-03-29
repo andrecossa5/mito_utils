@@ -109,7 +109,7 @@ def _place_tree_and_annotations(
                 vmax_annot
             )
 
-        elif pd.api.types.is_categorical_dtype(x):
+        elif pd.api.types.is_string_dtype(x):
             if isinstance(categorical_cmap, str):
                 categorical_cmap = create_palette(tree.cell_meta, feat, categorical_cmap)
             elif categorical_cmap is None:
@@ -142,26 +142,28 @@ def _set_colors(d, meta=None, cov=None, cmap=None, kwargs=None, vmin=None, vmax=
     """
     Create a dictionary of elements colors.
     """
-    colors = {} 
-
     if meta is not None and cov is not None:
         if cov in meta.columns:
             x = meta[cov]
-            if pd.api.types.is_numeric_dtype(x):
-                cmap = matplotlib.colormaps[cmap]
-                cmap = matplotlib.cm.get_cmap(cmap)
-                if vmin is None or vmax is None:
-                    vmin = np.percentile(x.values, 10)
-                    vmax = np.percentile(x.values, 90)
-                normalize = plt.Normalize(vmin=vmin, vmax=vmax)
-                colors = [ cmap(normalize(value)) for value in x ]
-                colors = { k:v for k, v in zip(x.index, colors)}
-            elif pd.api.types.is_categorical_dtype(x):
-                colors = (
-                    meta[cov]
-                    .map(create_palette(meta, cov, cmap))
-                    .to_dict()
-                )
+            if isinstance(cmap, str):
+                if pd.api.types.is_numeric_dtype(x):
+                    cmap = matplotlib.colormaps[cmap]
+                    cmap = matplotlib.cm.get_cmap(cmap)
+                    if vmin is None or vmax is None:
+                        vmin = np.percentile(x.values, 10)
+                        vmax = np.percentile(x.values, 90)
+                    normalize = plt.Normalize(vmin=vmin, vmax=vmax)
+                    colors = [ cmap(normalize(value)) for value in x ]
+                    colors = { k:v for k, v in zip(x.index, colors)}
+                elif pd.api.types.is_string_dtype(x):
+                    colors = (
+                        meta[cov]
+                        .map(create_palette(meta, cov, cmap))
+                        .to_dict()
+                    )
+            elif isinstance(cmap, dict):
+                print('User provide colors dictionary...')
+                colors = meta[cov].map(cmap).to_dict()
         else:
             raise KeyError(f'{cov} not present in cell_meta.')
     else:
@@ -252,7 +254,7 @@ def plot_tree(
     colors = _set_colors(
         leaves, meta=tree.cell_meta, cov=cov_leaves, 
         cmap=cmap_leaves, kwargs=_leaf_kwargs
-    )
+    )     
     for node in leaves:
         _dict = _leaf_kwargs.copy()
         x = leaves[node][0]
