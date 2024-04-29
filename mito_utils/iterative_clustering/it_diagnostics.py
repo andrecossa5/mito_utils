@@ -5,10 +5,10 @@ Utilities for the iterative scheme of clonal selection.
 import numpy as np
 import pandas as pd
 
-from .utils import *
-from .preprocessing import *
-from .clustering import *
-from .distances import *
+from ..utils import *
+from ..preprocessing import *
+from ..clustering import *
+from ..distances import *
 
 
 ##

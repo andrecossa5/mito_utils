@@ -597,3 +597,44 @@ def AFM_to_seqs(a, t=.1, method='simple_treshold'):
 
 
 ##
+
+
+def get_internal_node_muts(tree, internal_node):
+    """
+    Get each internal node mutational status.
+    """
+    muts = tree.character_matrix.columns
+    node_state = np.array(tree.get_character_states(internal_node))
+    idx = np.where(node_state==1)[0]
+    muts = muts[idx].to_list()
+    return muts
+
+
+##
+
+
+def assess_internal_node_muts(a, clades, c, high_af=.01):
+    """
+    Assess the prevalence of all MT-SNVs assigned to a single internal node 
+    within its clade (p1), and outside of it (p0). Return useful stats.
+    """
+    muts, cells = clades[c]
+    other_cells = a.obs_names[~a.obs_names.isin(cells)]
+    p1 = np.where(a[cells, muts].X>=high_af,1,0).sum(axis=0) / len(cells)
+    p0 = np.where(a[other_cells, muts].X>=high_af,1,0).sum(axis=0) / len(other_cells)
+    af1 = np.median(a[cells, muts].X, axis=0)
+    af0 = np.median(a[other_cells, muts].X, axis=0)
+    top_mut = (
+        pd.DataFrame(
+            {'p1':p1,'p0':p0, 'median_af0':af0, 'median_af1':af1, 
+             'clade':[c]*len(muts), 'ncells':[len(cells)]*len(muts)}, 
+            index=muts
+        )
+        .assign(p_ratio=lambda x: x['p1']/x['p0']+.0001)
+        .assign(af_ratio=lambda x: x['median_af1']/x['median_af0']+.0001)
+        .sort_values('p_ratio', ascending=False)
+    )
+    return top_mut
+
+
+##

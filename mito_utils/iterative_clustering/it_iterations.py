@@ -6,11 +6,11 @@ import os
 import numpy as np
 import pandas as pd
 
-from .utils import *
-from .preprocessing import *
-from .clustering import *
-from .distances import *
-from ._vireo import *
+from ..utils import *
+from ..preprocessing import *
+from ..clustering import *
+from ..distances import *
+from .._vireo import *
 from .it_diagnostics import *
 
 

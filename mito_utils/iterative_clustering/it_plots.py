@@ -7,9 +7,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import normalized_mutual_info_score
-from .utils import *
-from .plotting_base import *
-from .clustering import *
+from ..utils import *
+from ..plotting_base import *
+from ..clustering import *
 
 
 ##

@@ -6,7 +6,6 @@ NB: we may decide to split everything in its submodule (i.e., one for preprocess
 import scanpy as sc
 import matplotlib.pyplot as plt
 plt.style.use('default')
-
 from .colors import *
 from .plotting_base import *
 from .utils import *
