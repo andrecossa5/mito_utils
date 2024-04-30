@@ -121,7 +121,9 @@ def fast_hclust_distance(D):
     
     D[np.isnan(D)] = 0                               
     D[np.diag_indices(D.shape[0])] = 0
-    linkage_matrix = linkage(squareform(D), method='weighted')
+    if D.shape[0]==D.shape[1]:
+        D = squareform(D)
+    linkage_matrix = linkage(D, method='weighted')
     order = leaves_list(linkage_matrix)
 
     return order

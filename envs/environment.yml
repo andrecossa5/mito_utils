@@ -6,14 +6,15 @@ dependencies:
   - cxx-compiler
   - fortran-compiler
   - cython
+  - openblas
   - conda-build
   - leidenalg
   - matplotlib
   - networkx
   - numba
   - numpy
-  - python=3.9
-  - scanpy
+  - python=3.10
+  - scanpy=1.9.7
   - scikit-learn
   - scipy
   - seaborn
@@ -25,17 +26,17 @@ dependencies:
   - python-annoy
   - ipykernel
   - pigz
-  - samtools
-  - cellsnp-lite
   - pip:
     - pandas
-    - pegasusio==0.7.1 
-    - pegasuspy==1.7.1
     - python-igraph
     - statannotations
-    - mquad
+    - git+https://github.com/single-cell-genetics/MQuad
     - textalloc
     - zarr==2.14.2 
     - fbpca
     - pysam
+    - shap
     - dnaio
+    - git+https://github.com/YosefLab/Cassiopeia@master#egg=cassiopeia-lineage
+    - plotting_utils
+    - circlify

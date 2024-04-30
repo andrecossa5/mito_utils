@@ -6,10 +6,10 @@ from joblib import cpu_count
 import sys
 import numpy as np
 from umap.umap_ import nearest_neighbors 
-from hnswlib import Index 
+# from hnswlib import Index 
 from umap.umap_ import fuzzy_simplicial_set 
 from scipy.sparse import coo_matrix, issparse
-from scanpy.neighbors import _get_sparse_matrix_from_indices_distances_umap 
+from scanpy.neighbors import _get_sparse_matrix_from_indices_distances_umap
 
 from .utils import *
 
@@ -34,28 +34,28 @@ def _NN(X, k=15, metric='euclidean', implementation='pyNNDescent',
         )
 
     # kNN search: hnswlib. Only for euclidean and massive cases
-    elif metric in ['euclidean', 'l2', 'cosine'] and ( k>500 or implementation == 'hsnswlib' ):
-
-        metric = 'l2' if metric == 'euclidean' else metric
-        if issparse(X):
-            X = X.toarray()
-
-        index = Index(space=metric, dim=X.shape[1])
-        index.init_index(
-            max_elements=X.shape[0], 
-            ef_construction=200, 
-            M=20, 
-            random_seed=1234
-        )
-        index.set_num_threads(cpu_count())
-        index.add_items(X)
-        index.set_ef(200)
-
-        knn_indices, knn_distances = index.knn_query(X, k=k)
-        if metric == 'l2':
-            knn_dists = np.sqrt(knn_distances)
-        else:
-            knn_dists = knn_distances
+    # elif metric in ['euclidean', 'l2', 'cosine'] and ( k>500 or implementation == 'hsnswlib' ):
+    # 
+    #     metric = 'l2' if metric == 'euclidean' else metric
+    #     if issparse(X):
+    #         X = X.toarray()
+    # 
+    #     index = Index(space=metric, dim=X.shape[1])
+    #     index.init_index(
+    #         max_elements=X.shape[0], 
+    #         ef_construction=200, 
+    #         M=20, 
+    #         random_seed=1234
+    #     )
+    #     index.set_num_threads(cpu_count())
+    #     index.add_items(X)
+    #     index.set_ef(200)
+    # 
+    #     knn_indices, knn_distances = index.knn_query(X, k=k)
+    #     if metric == 'l2':
+    #         knn_dists = np.sqrt(knn_distances)
+    #     else:
+    #         knn_dists = knn_distances
     else:
         raise Exception(f'Incorrect options: {metric}, {metric_kwds}, {implementation}')
 

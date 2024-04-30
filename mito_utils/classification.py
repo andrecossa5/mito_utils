@@ -13,7 +13,7 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import StratifiedShuffleSplit, RandomizedSearchCV
 from sklearn.metrics import *
-from tune_sklearn import TuneGridSearchCV
+# from tune_sklearn import TuneGridSearchCV
 
 
 ##
@@ -107,30 +107,31 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         model.fit(X_train, y_train)
         f = model.best_estimator_[key]
 
-    elif GS_mode == 'bayes' and GS:
-
-        # Pipeline definiton
-        pipe = Pipeline( 
-            steps=[ 
-
-                ('pp', StandardScaler()), # Always scale expression features
-                (key, models[key]) # key = 'xgboost'
-            ]
-        )
-
-        # Ray-tune choice and training 
-        model = TuneGridSearchCV(
-            pipe,
-            params[key],
-            scoring=score,
-            refit=True,
-            n_jobs=cores_GS,
-            cv=StratifiedShuffleSplit(n_splits=5),
-            early_stopping=False,
-            max_iters=n_combos
-        )
-        model.fit(X_train, y_train)
-        f = model.best_estimator_[key]
+    # Too much problems with ray
+    # elif GS_mode == 'bayes' and GS:
+    # 
+    #     # Pipeline definiton
+    #     pipe = Pipeline( 
+    #         steps=[ 
+    # 
+    #             ('pp', StandardScaler()), # Always scale expression features
+    #             (key, models[key]) # key = 'xgboost'
+    #         ]
+    #     )
+    # 
+    #     # Ray-tune choice and training 
+    #     model = TuneGridSearchCV(
+    #         pipe,
+    #         params[key],
+    #         scoring=score,
+    #         refit=True,
+    #         n_jobs=cores_GS,
+    #         cv=StratifiedShuffleSplit(n_splits=5),
+    #         early_stopping=False,
+    #         max_iters=n_combos
+    #     )
+    #     model.fit(X_train, y_train)
+    #     f = model.best_estimator_[key]
 
     else:
         model = pipe

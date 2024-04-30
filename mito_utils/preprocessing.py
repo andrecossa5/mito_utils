@@ -162,11 +162,12 @@ def compute_metrics_filtered(a, spatial_metrics=True, low_af=.01):
     d['n_vars_per_cell'] = np.median(np.sum(X_bin, axis=1))
     d['n_cells_per_var'] = np.median(np.sum(X_bin, axis=0))
     # AFM sparseness and genotypes uniqueness
-    d['sparseness'] = np.sum(a.X==1) / np.product(a.shape)
+    d['sparseness'] = 1-(X_bin.sum() / np.product(X_bin.shape))
     seqs = AFM_to_seqs(a)
-    d['frac_unique_genotypes'] = pd.Series(seqs).value_counts().size / a.shape[0]
+    d['gen_redundancy'] = 1-(pd.Series(seqs).value_counts().size / X_bin.shape[0])
+    d['median_gen_prevalence'] = pd.Series(seqs).value_counts(normalize=True).median()
     # Mutational spectra
-    class_annot = a.var_names.map(lambda x: x.split('_')[1]).value_counts()
+    class_annot = a.var_names.map(lambda x: x.split('_')[1]).value_counts().astype('int')
     d = pd.concat([pd.Series(d), class_annot])
     if spatial_metrics:
         # Cell connectedness

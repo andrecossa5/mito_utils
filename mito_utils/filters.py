@@ -8,7 +8,6 @@ import pandas as pd
 import scipy.stats as stats
 from mquad.mquad import *
 from scipy.sparse import coo_matrix, csc_matrix
-from pegasus.tools.hvf_selection import fit_loess
 from itertools import chain
 
 
@@ -22,7 +21,6 @@ filtering_options = [
     'miller2022', 
     'weng2024',
     'seurat', 
-    'pegasus', 
     'MQuad', 
     'MQuad_optimized',
     'density'
@@ -163,40 +161,41 @@ def filter_seurat(afm, nbins=50, n=1000, log=True):
 ##
 
 
-def filter_pegasus(afm, span=0.02, n=1000):
-    """
-    Filter with the method implemented in pegasus.
-    """
-    # Get means and vars
-    X = afm.X
-    X[np.isnan(X)] = 0
-    mean = X.mean(axis=0)
-    var = X.var(axis=0)
-
-    # Fit var to the mean with loess regression, readjusting the span
-    span_value = span
-    while True:
-        lobj = fit_loess(mean, var, span=span_value, degree=2)
-        if lobj is not None:
-            break
-        span_value += 0.01
-
-    # Create two ranks
-    rank1 = np.zeros(mean.size, dtype=int)
-    rank2 = np.zeros(mean.size, dtype=int)
-    delta = var - lobj.outputs.fitted_values          # obs variance - fitted one
-    fc = var / lobj.outputs.fitted_values             # obs variance / fitted one
-    rank1[np.argsort(delta)[::-1]] = range(mean.size) # Rank in desc order
-    rank2[np.argsort(fc)[::-1]] = range(mean.size)
-
-    # Rank according to the sum of the two ranks, and filter AFM.
-    hvf_rank = rank1 + rank2
-    hvf_index = np.zeros(mean.size, dtype=bool)
-    hvf_index[np.argsort(hvf_rank)[:n]] = True
-    filtered = afm[:, hvf_index].copy()
-    filtered = filter_sites(filtered)        # Remove sites
-
-    return filtered
+# To much problem with sc-misc installation
+# def filter_pegasus(afm, span=0.02, n=1000):
+#     """
+#     Filter with the method implemented in pegasus.
+#     """
+#     # Get means and vars
+#     X = afm.X
+#     X[np.isnan(X)] = 0
+#     mean = X.mean(axis=0)
+#     var = X.var(axis=0)
+# 
+#     # Fit var to the mean with loess regression, readjusting the span
+#     span_value = span
+#     while True:
+#         lobj = fit_loess(mean, var, span=span_value, degree=2)
+#         if lobj is not None:
+#             break
+#         span_value += 0.01
+# 
+#     # Create two ranks
+#     rank1 = np.zeros(mean.size, dtype=int)
+#     rank2 = np.zeros(mean.size, dtype=int)
+#     delta = var - lobj.outputs.fitted_values          # obs variance - fitted one
+#     fc = var / lobj.outputs.fitted_values             # obs variance / fitted one
+#     rank1[np.argsort(delta)[::-1]] = range(mean.size) # Rank in desc order
+#     rank2[np.argsort(fc)[::-1]] = range(mean.size)
+# 
+#     # Rank according to the sum of the two ranks, and filter AFM.
+#     hvf_rank = rank1 + rank2
+#     hvf_index = np.zeros(mean.size, dtype=bool)
+#     hvf_index[np.argsort(hvf_rank)[:n]] = True
+#     filtered = afm[:, hvf_index].copy()
+#     filtered = filter_sites(filtered)        # Remove sites
+# 
+#     return filtered
 
 
 ##
