@@ -253,7 +253,7 @@ def fit_MQuad_mixtures(afm, n=None, path_=None, nproc=1, minDP=10, minAD=1, with
     """
     # Prefilter again, if still too much
     if n is not None:
-        afm = filter_pegasus(afm, n=n)  
+        afm = filter_seurat(afm, n=n)  
         afm = filter_sites(afm)
 
     AD, DP, ad_vars = get_AD_DP(afm, to='coo')

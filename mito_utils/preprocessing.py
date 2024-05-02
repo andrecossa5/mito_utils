@@ -2,6 +2,9 @@
 Module to create and process AFMs.
 """
 
+from scipy.special import binom
+from scipy.stats import fisher_exact
+from statsmodels.sandbox.stats.multicomp import multipletests
 from mito_utils.filters import *
 from mito_utils.make_afm import *
 from mito_utils.distances import *
@@ -189,10 +192,118 @@ def compute_metrics_filtered(a, spatial_metrics=True, low_af=.01):
 ##
 
 
+def compute_lineage_bias(a, lineage_column):
+    """
+    Compute -log10(FDR) Fisher's exact test: lineage biases of some mutation.
+    """
+
+    n = df.shape[0]
+    clones = np.sort(df[clone_column].unique())
+
+    target_ratio_array = np.zeros(clones.size)
+    oddsratio_array = np.zeros(clones.size)
+    pvals = np.zeros(clones.size)
+
+    # Here we go
+    for i, clone in enumerate(clones):
+
+        test_clone = df[clone_column] == clone
+        test_state = df[state_column] == target_state
+
+        clone_size = test_clone.sum()
+        clone_state_size = (test_clone & test_state).sum()
+        target_ratio = clone_state_size / clone_size
+        target_ratio_array[i] = target_ratio
+        other_clones_state_size = (~test_clone & test_state).sum()
+
+        # Fisher
+        oddsratio, pvalue = fisher_exact(
+            [
+                [clone_state_size, clone_size - clone_state_size],
+                [other_clones_state_size, n - other_clones_state_size],
+            ],
+            alternative='greater',
+        )
+        oddsratio_array[i] = oddsratio
+        pvals[i] = pvalue
+
+    # Correct pvals --> FDR
+    pvals = multipletests(pvals, alpha=0.05, method="fdr_bh")[1]
+
+    # Results
+    results = pd.DataFrame({
+        'perc_in_target_state' : target_ratio_array,
+        'odds_ratio' : oddsratio_array,
+        'FDR' : pvals,
+        'fate_bias' : -np.log10(pvals) 
+    }).sort_values('fate_bias', ascending=False)
+
+    return results
+
+
+##
+
+
+def compute_lineage_biases(a, lineage_column, target_lineage, t=.01):
+    """
+    Compute -log10(FDR) Fisher's exact test: lineage biases of some mutation.
+    """
+
+    n = a.shape[0]
+    muts = a.var_names
+
+    target_ratio_array = np.zeros(muts.size)
+    oddsratio_array = np.zeros(muts.size)
+    pvals = np.zeros(muts.size)
+
+    # Here we go
+    for i, mut in enumerate(muts):
+
+        test_mut = a[:,mut].X.flatten() >= t 
+        test_lineage = a.obs[lineage_column] == target_lineage
+
+        mut_size = test_mut.sum()
+        mut_lineage_size = (test_mut & test_lineage).sum()
+        target_ratio = mut_lineage_size / mut_size
+        target_ratio_array[i] = target_ratio
+        other_mut_lineage_size = (~test_mut & test_lineage).sum()
+
+        # Fisher
+        oddsratio, pvalue = fisher_exact(
+            [
+                [mut_lineage_size, mut_size - mut_lineage_size],
+                [other_mut_lineage_size, n - other_mut_lineage_size],
+            ],
+            alternative='greater',
+        )
+        oddsratio_array[i] = oddsratio
+        pvals[i] = pvalue
+
+    # Correct pvals --> FDR
+    pvals = multipletests(pvals, alpha=0.05, method="fdr_bh")[1]
+
+    # Results
+    results = (
+        pd.DataFrame({
+            'perc_in_target_lineage' : target_ratio_array,
+            'odds_ratio' : oddsratio_array,
+            'FDR' : pvals,
+            'lineage_bias' : -np.log10(pvals) 
+        }, index=muts
+        )
+        .sort_values('lineage_bias', ascending=False)
+    )
+
+    return results
+
+
+##
+
+
 def filter_cells_and_vars(
     afm, filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, 
     path_=None, n=1000, prefilter_MQuad=False, spatial_metrics=False, 
-    mut_priors=None, lineage_col=None, fit_mixtures=False, **kwargs
+    mut_priors=None, lineage_column=None, fit_mixtures=False, **kwargs
     ):
     """
     Filter cells and vars from an afm.
@@ -338,10 +449,22 @@ def filter_cells_and_vars(
 
     # Variants
     vars_df['filtered'] = vars_df.index.isin(a.var_names)
-    # compute lineage bias
-    # add priors
-    # compute bimodal mixture modelling deltaBIC (MQuad) fit_mixtures=False, 
+    vars_df_ = vars_df[vars_df['filtered']]                 # Additional stats only on filtered variants
 
+    # Lineage bias
+    if lineage_column is not None:
+        lineages = a.obs[lineage_column].dropna().unique()
+        for target_lineage in lineages:
+            res = compute_lineage_biases(a, lineage_column, target_lineage)
+            test = vars_df_.index.isin(res.query('FDR<=0.1').index)
+            vars_df_[f'enriched_{target_lineage}'] = test
+
+    # Bimodal mixture modelling deltaBIC (MQuad-like)
+    if fit_mixtures:
+        vars_df_ = vars_df_.join(fit_MQuad_mixtures(a).dropna()[['deltaBIC']])
+
+    # Add priors from external data sources
+    
     return vars_df, dataset_df, a
 
 
