@@ -36,7 +36,7 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
     *  (Optional) 'cells_summary_table.csv', a table of storing cell clone assignments (if lentivirally barcoded cells).
     """
 
-    print(f'Filter MT-SNVS from the full AFM...')
+    print(f'Create the full cell x MT-SNVs Allele Frequency Matrix (AFM)...')
 
     # Read maegatk output
     A = sc.read(os.path.join(path_data, sample, 'AFM.h5ad'))
@@ -187,58 +187,6 @@ def compute_metrics_filtered(a, spatial_metrics=True, low_af=.01):
     df = pd.Series(d).T.to_frame('value').reset_index().rename(columns={'index':'metric'})
 
     return df
-
-
-##
-
-
-def compute_lineage_bias(a, lineage_column):
-    """
-    Compute -log10(FDR) Fisher's exact test: lineage biases of some mutation.
-    """
-
-    n = df.shape[0]
-    clones = np.sort(df[clone_column].unique())
-
-    target_ratio_array = np.zeros(clones.size)
-    oddsratio_array = np.zeros(clones.size)
-    pvals = np.zeros(clones.size)
-
-    # Here we go
-    for i, clone in enumerate(clones):
-
-        test_clone = df[clone_column] == clone
-        test_state = df[state_column] == target_state
-
-        clone_size = test_clone.sum()
-        clone_state_size = (test_clone & test_state).sum()
-        target_ratio = clone_state_size / clone_size
-        target_ratio_array[i] = target_ratio
-        other_clones_state_size = (~test_clone & test_state).sum()
-
-        # Fisher
-        oddsratio, pvalue = fisher_exact(
-            [
-                [clone_state_size, clone_size - clone_state_size],
-                [other_clones_state_size, n - other_clones_state_size],
-            ],
-            alternative='greater',
-        )
-        oddsratio_array[i] = oddsratio
-        pvals[i] = pvalue
-
-    # Correct pvals --> FDR
-    pvals = multipletests(pvals, alpha=0.05, method="fdr_bh")[1]
-
-    # Results
-    results = pd.DataFrame({
-        'perc_in_target_state' : target_ratio_array,
-        'odds_ratio' : oddsratio_array,
-        'FDR' : pvals,
-        'fate_bias' : -np.log10(pvals) 
-    }).sort_values('fate_bias', ascending=False)
-
-    return results
 
 
 ##
