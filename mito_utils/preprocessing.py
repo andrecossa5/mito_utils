@@ -113,12 +113,13 @@ def compute_metrics_raw(afm):
 ##
 
 
-def compute_metrics_filtered(a, spatial_metrics=True, t=.01):
+def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs={}):
     """
     Compute additional metrics on selected feature space.
     """
 
     # Binarize
+    t = .01 if 't' not in tree_kwargs else tree_kwargs['t']
     X_bin = np.where(a.X>=t,1,0)
     d = {}
 
@@ -150,7 +151,7 @@ def compute_metrics_filtered(a, spatial_metrics=True, t=.01):
         d['median_connectedness'] = np.median(cell_conn)
         d['mean_connectedness'] = np.mean(cell_conn)
         # Baseline tree internal nodes mutations support
-        tree = build_tree(a, t=t)
+        tree = build_tree(a, weights=weights, **tree_kwargs)
         tree_collapsed = tree.copy()
         tree_collapsed.collapse_mutationless_edges(True)
         d['frac_supported_nodes'] = len(tree_collapsed.internal_nodes) / len(tree.internal_nodes)
@@ -221,7 +222,8 @@ def compute_lineage_biases(a, lineage_column, target_lineage, t=.01):
 
 
 def filter_cells_and_vars(
-    afm, filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, filtering_kwargs={},
+    afm, filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, 
+    filtering_kwargs={}, tree_kwargs={},
     spatial_metrics=False, path_priors=None, lineage_column=None, fit_mixtures=False,
     ):
     """
@@ -243,7 +245,6 @@ def filter_cells_and_vars(
         print(f'Feature selection method: {filtering}')
         print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
         a_cells = afm.copy()
-        n_cells = afm.shape[0]
         
         # Cells from clone with at least min_cell_number cells, if necessary
         if min_cell_number > 0:
@@ -325,16 +326,15 @@ def filter_cells_and_vars(
     print(f'Filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
     if a.shape[1] == 0:
         raise ValueError('No variant selected! Change filtering method!!')
-    
-    # Dataset
-    dataset_df = pd.concat([
-        dataset_df, 
-        compute_metrics_filtered(a, spatial_metrics=spatial_metrics)
-    ])
 
     # Compute last metrics for filtered variants
     vars_df['filtered'] = vars_df.index.isin(a.var_names)
     filtered_vars_df = vars_df.loc[a.var_names]
+
+    # Add priors from external data sources
+    priors = pd.read_csv(path_priors, index_col=0)
+    vars_df['prior'] = priors.iloc[:,0]
+    filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
 
     # Lineage bias
     if lineage_column is not None:
@@ -355,14 +355,18 @@ def filter_cells_and_vars(
             )
         )
 
-    # Add priors from external data sources
-    priors = pd.read_csv(path_priors, index_col=0)
-    vars_df['prior'] = priors.iloc[:,0]
-    filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
-
     # Add all filtered variants metadata to afm
     assert all(a.var_names == filtered_vars_df.index)
     a.var = filtered_vars_df
+    
+    # Last dataset stats
+    dataset_df = pd.concat([
+        dataset_df, 
+        compute_metrics_filtered(
+            a, spatial_metrics=spatial_metrics, 
+            weights=1-a.var['prior'].values, tree_kwargs=tree_kwargs
+        )
+    ])
 
     return vars_df, dataset_df, a
 
