@@ -4,62 +4,12 @@ Module to create custom distance function among cell AF profiles.
 
 import numpy as np
 import pandas as pd
-
-from anndata import AnnData
 from itertools import product
-from scipy.spatial.distance import sqeuclidean, cosine, correlation
-from scipy.spatial.distance import euclidean as euclidean_std
 from sklearn.metrics import pairwise_distances, recall_score, precision_score, auc
+from sklearn.metrics.pairwise import PAIRWISE_BOOLEAN_FUNCTIONS
 from joblib import Parallel, delayed, parallel_backend, cpu_count
-
+from anndata import AnnData
 from .utils import rescale
-
-
-##
-
-def euclidean_nans(x, y):
-    ix = np.where(~np.isnan(x))[0]
-    iy = np.where(~np.isnan(y))[0]
-    idx = list(set(ix) & set(iy))
-    x_ = x[idx]
-    y_ = y[idx]
-    return euclidean_std(x_, y_)
-
-
-##
-
-
-def sqeuclidean_nans(x, y):
-    ix = np.where(~np.isnan(x))[0]
-    iy = np.where(~np.isnan(y))[0]
-    idx = list(set(ix) & set(iy))
-    x_ = x[idx]
-    y_ = y[idx]
-    return sqeuclidean(x_, y_)
-
-
-##
-
-
-def correlation_nans(x, y):
-    ix = np.where(~np.isnan(x))[0]
-    iy = np.where(~np.isnan(y))[0]
-    idx = list(set(ix) & set(iy))
-    x_ = x[idx]
-    y_ = y[idx]
-    return correlation(x_, y_)
-
-
-## 
-
-
-def cosine_nans(x, y):
-    ix = np.where(~np.isnan(x))[0]
-    iy = np.where(~np.isnan(y))[0]
-    idx = list(set(ix) & set(iy))
-    x_ = x[idx]
-    y_ = y[idx]
-    return cosine(x_, y_)
 
 
 ##
@@ -148,62 +98,29 @@ def prep_X_cov(a):
 ##
 
 
-def pair_d(a, ncores=8, t=0.025, **kwargs):
-    """
-    Function for calculating pairwise distances within the row vectors of a matrix X.
-    """
-    # Get kwargs
-    try:
-        metric = kwargs['metric']
-        if metric is None or metric == 'None':
-            metric = 'cosine'
-    except:
-        metric = 'euclidean'
-    try:
-        ncores = kwargs['ncores']
-    except:
-        ncores = 8
-    try:
-        nans = kwargs['nans']
-    except:
-        nans = False
 
-    print(f'pair_d arguments: metric={metric}, ncores={ncores}, nans={nans}')
+def pair_d(data, metric='jaccard', t=.01, weights=None, ncores=8, metric_kwargs={}):
+    """
+    Function for calculating (possibly weighted) pairwise distances among cells 
+    """
+    print(f'pair_d arguments: metric={metric}, t={t:.2f}, ncores={ncores}.')
     
-    # Prep afm matrix (optionally coverage matrix also)
     if metric == 'ludwig2019':
-        if not isinstance(a, AnnData):
-            raise TypeError(f'a must be an AnnData to use metric {metric}')
-        else:
+        if isinstance(data, AnnData):
             X, cov = prep_X_cov(a)
-    else:
-        if isinstance(a, AnnData):
-            X, cov = prep_X_cov(a)
+            D = ludwig_distances(X, cov, n_jobs=ncores, **metric_kwargs)
         else:
-            X = a
-    
-    # Compute D
-    if not nans:
-        
-        if metric in ['jaccard', 'matching']:
-            X = np.where(X>t, 1, 0)
-            D = pairwise_distances(X, metric=metric, n_jobs=ncores)
-        elif metric == 'ludwig2019':
-            D = ludwig_distances(X, cov, n_jobs=ncores, **kwargs)
-        else:
-            D = pairwise_distances(X, metric=metric, n_jobs=ncores)
-        
+            raise TypeError('data must be of type AnnData to use metric ludwig2019.')
     else:
-        
-        print(f'Custom, nan-robust {metric} metric will be used here...')
-        if metric == 'euclidean':
-            D = pairwise_distances(X, metric=euclidean_nans, n_jobs=ncores, force_all_finite=False)
-        elif metric == 'sqeuclidean':
-            D = pairwise_distances(X, metric=sqeuclidean_nans, n_jobs=ncores, force_all_finite=False)
-        elif metric == 'correlation':
-            D = pairwise_distances(X, metric=correlation_nans, n_jobs=ncores, force_all_finite=False)
-        elif metric == 'cosine':
-            D = pairwise_distances(X, metric=cosine_nans, n_jobs=ncores, force_all_finite=False)
+        if isinstance(data, AnnData):
+            X = data.X
+        else:
+            X = data
+        if metric in PAIRWISE_BOOLEAN_FUNCTIONS:
+            X = np.where(X>=t,1,0)
+        if weights is not None:
+            X = X * weights
+        D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False)
 
     return D
 
@@ -216,7 +133,7 @@ def evaluate_metric_with_gt(a, metric, labels, **kwargs):
     print(f'Computing distances with metric {metric}...')
     
     final = {}
-    D = pair_d(a, metric=metric)
+    D = pair_d(a, metric=metric, **kwargs)
 
     for alpha in np.linspace(0,1,10):
         

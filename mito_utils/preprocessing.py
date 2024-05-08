@@ -28,7 +28,7 @@ def nans_as_zeros(afm):
 
 
 
-def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC=True, nmads=3, mean_coverage=25):
+def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC=False, nmads=3, mean_coverage=25):
     """
     Read and format one sample AFM. Path data should be folder with a <sample> subfolder, storing:
     * 'AFM.h5ad', the maegatk output produced by mito_preprocessing Nextflow pipeline
@@ -36,7 +36,7 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
     *  (Optional) 'cells_summary_table.csv', a table of storing cell clone assignments (if lentivirally barcoded cells).
     """
 
-    print(f'Create the full cell x MT-SNVs Allele Frequency Matrix (AFM)...')
+    print(f'Create the full cell x MT-SNV Allele Frequency Matrix (AFM)...')
 
     # Read maegatk output
     A = sc.read(os.path.join(path_data, sample, 'AFM.h5ad'))
@@ -69,7 +69,7 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
     MAD = np.median(np.abs(x-median))
     test = (x<=median+nmads*MAD) & (x>=mean_coverage)  # Test
     A = A[test,:].copy()                               # Filtering 
-    print(f'Cells with MT-genome coverage >={mean_coverage} and <={median+nmads*MAD}: {A.shape[0]}')
+    print(f'Filtered cells (i.e., mean MT-genome coverage >={mean_coverage} and <={median+nmads*MAD:.2f}): {A.shape[0]}')
 
     # Format into a complete afm
     afm = format_matrix(
@@ -85,45 +85,6 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
         afm.obs = afm.obs.drop(columns=['GBC_Set'])
 
     return afm
-
-
-##
-
-
-def mask_mt_sites(afm):
-    """
-    Function to mask all sites outside of known MT-genes bodies.
-    """
-
-    # All expressed mitochondrial genes with their start and end positions
-    all_mt_genes_positions = [
-        ["MT-ND1", 3307, 4262], ["MT-ND2", 4470, 5511], ["MT-CO1", 5904, 7445],
-        ["MT-CO2", 7586, 8269], ["MT-ATP8", 8366, 8572], ["MT-ATP6", 8527, 9207],
-        ["MT-CO3", 9207, 9990], ["MT-ND3", 10059, 10404], ["MT-ND4L", 10470, 10766],
-        ["MT-ND4", 10760, 12137], ["MT-ND5", 12337, 14148], ["MT-ND6", 14149, 14673],
-        ["MT-CYB", 14747, 15887], ["MT-TF", 577, 647], ["MT-TV", 1602, 1670],
-        ["MT-TL1", 3230, 3304], ["MT-TI", 4263, 4331], ["MT-TQ", 4329, 4400],
-        ["MT-TM", 4402, 4469], ["MT-TW", 5512, 5579], ["MT-TA", 5587, 5655],
-        ["MT-TN", 5657, 5729], ["MT-TC", 5761, 5826], ["MT-TY", 5826, 5891],
-        ["MT-TS1", 7518, 7585], ["MT-TD", 7513, 7585], ["MT-TK", 8295, 8364],
-        ["MT-TG", 9991, 10058], ["MT-TR", 10405, 10469], ["MT-TH", 12138, 12206],
-        ["MT-TS2", 12207, 12265], ["MT-TL2", 12266, 12336], ["MT-TE", 14674, 14742],
-        ["MT-TT", 15888, 15953], ["MT-TP", 15956, 16023], ["12S rRNA", 648, 1601],
-        ["16S rRNA", 1671, 3229]
-    ]
-
-    # Here we go
-    sites = afm.uns['per_position_coverage'].columns
-    mask = []
-    for x in sites:
-        x = int(x)
-        t = [ x>=start and x<=end for _, start, end in all_mt_genes_positions ]
-        if any(t):
-            mask.append(True)
-        else:
-            mask.append(False)
-
-    return np.array(mask)
 
 
 ##
@@ -152,33 +113,44 @@ def compute_metrics_raw(afm):
 ##
 
 
-def compute_metrics_filtered(a, spatial_metrics=True, low_af=.01):
+def compute_metrics_filtered(a, spatial_metrics=True, t=.01):
     """
     Compute additional metrics on selected feature space.
     """
 
     # Binarize
-    X_bin = np.where(a.X>=low_af,1,0)
+    X_bin = np.where(a.X>=t,1,0)
     d = {}
 
+    # n cells and vars
+    d['n_cells'] = X_bin.shape[0]
+    d['n_vars'] = X_bin.shape[1]
     # n cells per var and n vars per cell (mean, median, std)
-    d['n_vars_per_cell'] = np.median(np.sum(X_bin, axis=1))
-    d['n_cells_per_var'] = np.median(np.sum(X_bin, axis=0))
+    d['median_n_vars_per_cell'] = np.median(X_bin.sum(axis=1))
+    d['mean_n_vars_per_cell'] = np.mean(X_bin.sum(axis=1))
+    d['std_n_vars_per_cell'] = np.std(X_bin.sum(axis=1))
+    d['mean_n_cells_per_var'] = np.mean(X_bin.sum(axis=0))
+    d['median_n_cells_per_var'] = np.median(X_bin.sum(axis=0))
+    d['std_n_cells_per_var'] = np.std(X_bin.sum(axis=0))
     # AFM sparseness and genotypes uniqueness
-    d['sparseness'] = 1-(X_bin.sum() / np.product(X_bin.shape))
+    d['density'] = X_bin.sum() / np.product(X_bin.shape)
     seqs = AFM_to_seqs(a)
-    d['gen_redundancy'] = 1-(pd.Series(seqs).value_counts().size / X_bin.shape[0])
-    d['median_gen_prevalence'] = pd.Series(seqs).value_counts(normalize=True).median()
+    unique_genomes_occurrences = pd.Series(seqs).value_counts(normalize=True)
+    d['genomes_redundancy'] = 1-(unique_genomes_occurrences.size / X_bin.shape[0])
+    d['median_genome_prevalence'] = unique_genomes_occurrences.median()
     # Mutational spectra
     class_annot = a.var_names.map(lambda x: x.split('_')[1]).value_counts().astype('int')
     d = pd.concat([pd.Series(d), class_annot])
+
+    # Spatial metrics
     if spatial_metrics:
         # Cell connectedness
         D = pairwise_distances(X_bin, metric=lambda x, y: np.sum(np.logical_and(x, y)))
         cell_conn = np.ma.masked_equal(D, np.diag(D)).mean(axis=1).data
         d['median_connectedness'] = np.median(cell_conn)
+        d['mean_connectedness'] = np.mean(cell_conn)
         # Baseline tree internal nodes mutations support
-        tree = build_tree(a, t=low_af)
+        tree = build_tree(a, t=t)
         tree_collapsed = tree.copy()
         tree_collapsed.collapse_mutationless_edges(True)
         d['frac_supported_nodes'] = len(tree_collapsed.internal_nodes) / len(tree.internal_nodes)
@@ -249,170 +221,149 @@ def compute_lineage_biases(a, lineage_column, target_lineage, t=.01):
 
 
 def filter_cells_and_vars(
-    afm, filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, 
-    path_=None, n=1000, prefilter_MQuad=False, spatial_metrics=False, 
-    mut_priors=None, lineage_column=None, fit_mixtures=False, **kwargs
+    afm, filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, filtering_kwargs={},
+    spatial_metrics=False, path_priors=None, lineage_column=None, fit_mixtures=False,
     ):
     """
     Filter cells and vars from an afm.
     """ 
 
     # General dataset QC
-    print('Compute general dataset metrics as in Weng et al., 2024')
+    print('Compute general dataset metrics...')
     dataset_df = compute_metrics_raw(afm)
 
     # Variants metrics
     print('Compute vars_df as in Weng et al., 2024')
     vars_df = make_vars_df(afm)
 
-    print(f'Filter MT-SNVS from the full  AFM...')
-    if filtering in filtering_options and filtering != 'density':
+    print(f'Filter MT-SNVS from the full AFM...')
+    if filtering in filtering_options:
 
         # n cells
         print(f'Feature selection method: {filtering}')
-        print(f'Original AFM n cells: {afm.shape[0]}')
+        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
         a_cells = afm.copy()
-
+        n_cells = afm.shape[0]
+        
+        # Cells from clone with at least min_cell_number cells, if necessary
         if min_cell_number > 0:
-            n_cells = a_cells.shape[0]
-            print(f'Filtering cells from clones with >={min_cell_number} cells')
-            cell_counts = a_cells.obs.groupby('GBC').size()
-            clones_to_retain = cell_counts[cell_counts>=min_cell_number].index 
-            test = a_cells.obs['GBC'].isin(clones_to_retain)
-            a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
-            a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
-            a_cells = a_cells[test, :].copy()
-            print(f'Removed other {n_cells-a_cells.shape[0]} cells')
-            print(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
+            a_cells = filter_cell_clones(afm, min_cell_number=min_cell_number)
        
-        # Variants
+        # Filter MT-SNVs
         a_cells = filter_baseline(a_cells)
+        if filtering == 'baseline':
+            a = a_cells.copy()
         if filtering == 'CV':
-            a = filter_CV(a_cells, n=100)
-        elif filtering == 'ludwig2019':
-            a = filter_ludwig2019(a_cells)
-        elif filtering == 'miller2022':
-            a = filter_miller2022(a_cells)
-        elif filtering == 'weng2024':
-            a = filter_weng2024(a_cells, vars_df, **kwargs)
+            a = filter_CV(a_cells, **filtering_kwargs)
         elif filtering == 'seurat':
-            a = filter_seurat(a_cells, n=n)
-        elif filtering == 'pegasus':
-            a = filter_pegasus(a_cells, n=n)
+            a = filter_seurat(a_cells, **filtering_kwargs)
+        elif filtering == 'ludwig2019':
+            a = filter_ludwig2019(a_cells, **filtering_kwargs)
+        elif filtering == 'miller2022':
+            a = filter_miller2022(a_cells, **filtering_kwargs)
+        elif filtering == 'weng2024':
+            a = filter_weng2024(a_cells, **filtering_kwargs)
         elif filtering == 'MQuad':
-            n = None if not prefilter_MQuad else n
-            a = filter_Mquad(a_cells, nproc=nproc, path_=path_, n=n)
+            a = filter_Mquad(a_cells, nproc=nproc, **filtering_kwargs)
         elif filtering == 'MQuad_optimized':
-            a = filter_Mquad_optimized(a_cells, nproc=nproc, path_=path_)
+            a = filter_Mquad_optimized(a_cells, nproc=nproc, **filtering_kwargs)
         elif filtering == 'DADApy':
             a = filter_DADApy(a_cells)
+        elif filtering == 'density':
+            a = filter_density(a_cells, **filtering_kwargs)
 
-    elif filtering == 'density':
-        
-        # n cells
-        print(f'Feature selection method: {filtering}')
-        print(f'Original AFM n cells: {afm.shape[0]}')
-        a_cells = afm.copy()
-
-        if min_cell_number > 0:
-            n_cells = a_cells.shape[0]
-            print(f'Filtering cells from clones with >{min_cell_number} cells')
-            cell_counts = a_cells.obs.groupby('GBC').size()
-            clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
-            cells_to_retain = a_cells.obs.query('GBC in @clones_to_retain').index
-            a_cells = a_cells[cells_to_retain, :].copy()
-            a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[cells_to_retain, :]
-            a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[cells_to_retain, :]
-            print(f'Removed other {n_cells-a_cells.shape[0]} cells')
-            print(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
-        a_cells = filter_baseline(a_cells)
-        a = filter_density(a_cells)
-
-    elif filtering == 'LINEAGE_prep':
-
-        # n cells
-        print(f'Feature selection method: {filtering}')
-        print(f'Original AFM n cells: {afm.shape[0]}')
-        a_cells = afm.copy()
-
-        if min_cell_number > 0:
-            n_cells = a_cells.shape[0]
-            print(f'Filtering cells from clones with >{min_cell_number} cells')
-            cell_counts = a_cells.obs.groupby('GBC').size()
-            clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
-            test = a_cells.obs['GBC'].isin(clones_to_retain)
-            a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
-            a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
-            a_cells = a_cells[test, :].copy()
-            print(f'Removed other {n_cells-a_cells.shape[0]} cells')
-            print(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
-        a = a_cells.copy()
+    # elif filtering == 'LINEAGE_prep':
+    # 
+    #     # n cells
+    #     print(f'Feature selection method: {filtering}')
+    #     print(f'Original AFM n cells: {afm.shape[0]}')
+    #     a_cells = afm.copy()
+    # 
+    #     if min_cell_number > 0:
+    #         n_cells = a_cells.shape[0]
+    #         print(f'Filtering cells from clones with >{min_cell_number} cells')
+    #         cell_counts = a_cells.obs.groupby('GBC').size()
+    #         clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
+    #         test = a_cells.obs['GBC'].isin(clones_to_retain)
+    #         a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
+    #         a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
+    #         a_cells = a_cells[test, :].copy()
+    #         print(f'Removed other {n_cells-a_cells.shape[0]} cells')
+    #         print(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
+    #     a = a_cells.copy()
 
     elif cells is None and variants is not None:
 
         # n cells
-        print(f'Original AFM n cells: {afm.shape[0]}')
+        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
         a_cells = afm.copy()
-        
+        # Cells from clone with at least min_cell_number cells, if necessary
         if min_cell_number > 0:
-            n_cells = a_cells.shape[0]
-            print(f'Filtering cells from clones with >{min_cell_number} cells')
-            cell_counts = a_cells.obs.groupby('GBC').size()
-            clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
-            test = a_cells.obs['GBC'].isin(clones_to_retain)
-            a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
-            a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
-            a_cells = a_cells[test, :].copy()
-            print(f'Removed other {n_cells-a_cells.shape[0]} cells')
-            print(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
+            a_cells = filter_cell_clones(afm, min_cell_number=min_cell_number)
         a = a_cells[:, variants].copy()
         a = filter_sites(a)
 
     elif cells is not None and variants is None:
-        print(f'Original AFM n cells: {afm.shape[0]}')
+        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
         a_cells = afm[cells, :].copy()
         a_cells = filter_sites(a_cells)
-        a = a_cells
+        a = a_cells.copy()
 
     elif cells is not None and variants is not None:
-        print(f'Original AFM n cells: {afm.shape[0]}')
+        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
         a_cells = afm[cells, variants].copy()
         a_cells = filter_sites(a_cells)
-        a = a_cells
+        a = a_cells.copy()
     
     else:
         raise ValueError(
-                    f'''The provided filtering method {filtering} is not supported.
-                        Choose another one...'''
-                )
+                f'''The provided filtering method {filtering} is not supported.
+                    Choose another one...'''
+            )
 
-    # Finish to collect dataset and variants metrics to evalutate MT-SNVs quality
-
+    # Final dataset and filtered MT-SNVs metrics to evalutate the selected MT-SNVs space quality
+    print(f'Filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
+    if a.shape[1] == 0:
+        raise ValueError('No variant selected! Change filtering method!!')
+    
     # Dataset
-    print(f'Filtered feature matrix contains {a.shape[0]} cells and {a.shape[1]} variants.')
     dataset_df = pd.concat([
         dataset_df, 
         compute_metrics_filtered(a, spatial_metrics=spatial_metrics)
     ])
 
-    # Variants
+    # Compute last metrics for filtered variants
     vars_df['filtered'] = vars_df.index.isin(a.var_names)
-    vars_df_ = vars_df[vars_df['filtered']]                 # Additional stats only on filtered variants
+    filtered_vars_df = vars_df.loc[a.var_names]
 
     # Lineage bias
     if lineage_column is not None:
         lineages = a.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
             res = compute_lineage_biases(a, lineage_column, target_lineage)
-            test = vars_df_.index.isin(res.query('FDR<=0.1').index)
-            vars_df_[f'enriched_{target_lineage}'] = test
+            test = filtered_vars_df.index.isin(res.query('FDR<=0.1').index)
+            filtered_vars_df[f'enriched_{target_lineage}'] = test
 
     # Bimodal mixture modelling deltaBIC (MQuad-like)
     if fit_mixtures:
-        vars_df_ = vars_df_.join(fit_MQuad_mixtures(a).dropna()[['deltaBIC']])
+        filtered_vars_df = (
+            filtered_vars_df
+            .join(
+                fit_MQuad_mixtures(a)
+                .dropna()
+                [['deltaBIC']]
+            )
+        )
 
     # Add priors from external data sources
-    
+    priors = pd.read_csv(path_priors, index_col=0)
+    vars_df['prior'] = priors.iloc[:,0]
+    filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
+
+    # Add all filtered variants metadata to afm
+    assert all(a.var_names == filtered_vars_df.index)
+    a.var = filtered_vars_df
+
     return vars_df, dataset_df, a
 
 

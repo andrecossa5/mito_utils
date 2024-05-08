@@ -188,8 +188,11 @@ def jackknife_allele_tables(ad=None, dp=None, M=None):
 ##
 
 
-def build_tree(a=None, M=None, D=None, meta=None, t=.025, metric='cosine',
-                solver='UPMGA', ncores=8, solver_kwargs={}):
+def build_tree(
+        a=None, M=None, D=None, meta=None, 
+        metric='jaccard', t=.01, weights=None, solver='UPMGA', 
+        ncores=8, metric_kwargs={}, solver_kwargs={}
+    ):
     """
     Wrapper for tree building with Cassiopeia solvers.
     """
@@ -199,9 +202,7 @@ def build_tree(a=None, M=None, D=None, meta=None, t=.025, metric='cosine',
         _solver = solver_d[solver]
         print(f'Chosen solver: {solver}')
     elif isinstance(solver, str) and solver not in solver_d:
-        raise KeyError(f'{solver} solver not available.')
-    else:
-        print(f'New solver passed to build_tree(): {solver}')
+        raise KeyError(f'{solver} solver not available. Choose on in {solver_d}')
 
     solver_kwargs = solver_kwargs_d[solver]
 
@@ -211,7 +212,7 @@ def build_tree(a=None, M=None, D=None, meta=None, t=.025, metric='cosine',
     elif a is not None:
         meta = a.obs
         M = pd.DataFrame(np.where(a.X>=t, 1, 0), index=a.obs_names, columns=a.var_names)
-        D = pair_d(a.X, ncores=ncores, metric=metric)
+        D = pair_d(a, metric=metric, t=t, weights=weights, ncores=ncores, metric_kwargs=metric_kwargs)
         D[np.isnan(D)] = 0
         D = pd.DataFrame(D, index=a.obs_names, columns=a.obs_names)
     else:
@@ -235,7 +236,7 @@ def build_tree(a=None, M=None, D=None, meta=None, t=.025, metric='cosine',
 
 def bootstrap_iteration(M=None, AD=None, DP=None, meta=None, variants=None, 
                         boot_strategy='jacknife', solver='UPMGA', 
-                        metric='hamming', t=0.025, ncores=8, solver_kwargs={}):
+                        metric='jaccard', t=0.01, ncores=8, solver_kwargs={}):
     """
     One bootstrap iteration.
     """
@@ -250,13 +251,13 @@ def bootstrap_iteration(M=None, AD=None, DP=None, meta=None, variants=None,
         elif boot_strategy == 'counts_resampling':
             AD_, DP_, sel_idx = bootstrap_allele_counts(AD=AD.A.T, DP=DP.A.T)
 
+        # Prep M, D and meta
         X = np.divide(AD_, DP_)
         X[np.isnan(X)] = 0
         variants = variants[sel_idx]
         M = pd.DataFrame(np.where(X>=t, 1, 0), index=meta.index, columns=variants)
-        # Prep M, D and meta
-        D = pd.DataFrame(pair_d(X, ncores=ncores, metric=metric), 
-                        index=meta.index, columns=meta.index)
+        D = pair_d(X, metric=metric, t=t, ncores=ncores)
+        D = pd.DataFrame(D, index=meta.index, columns=meta.index)
         D[np.isnan(D)] = 0
     
     elif M is not None:
@@ -269,14 +270,16 @@ def bootstrap_iteration(M=None, AD=None, DP=None, meta=None, variants=None,
             raise ValueError('Pass AD and DP for counts resampling...')
 
         # Prep M, D and meta
-        D = pd.DataFrame(pairwise_distances(M.values, metric=metric), 
-                        index=M.index, columns=M.index)
+        D = pair_d(M.values, metric=metric, t=t, ncores=ncores)
+        D = pd.DataFrame(D, index=M.index, columns=M.index)
         meta = pd.DataFrame(index=M.index)
         variants = M.columns
 
     # Build tree
-    tree = build_tree(M=M, D=D, meta=meta, metric=metric, solver=solver, t=t, 
-                      solver_kwargs=solver_kwargs)
+    tree = build_tree(
+        M=M, D=D, meta=meta, metric=metric, t=t, 
+        solver=solver, solver_kwargs=solver_kwargs
+    )
 
     return tree
 
@@ -475,10 +478,7 @@ def compute_TBE_hamming_one_tree(obs_clades, leaves_order, boot_tree, n_jobs=8):
     ]).astype(np.float16)
 
     D1 = pairwise_distances(OBS, BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
-    D2 = pairwise_distances(
-        (~OBS.astype(bool)).astype(np.int0), 
-        BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
-
+    D2 = pairwise_distances((~OBS.astype(bool)).astype(np.int0), BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
     D = np.minimum(D1, D2)
     transfer_index = D.min(axis=1)
 
