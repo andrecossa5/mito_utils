@@ -141,15 +141,17 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs=
     d['median_genome_prevalence'] = unique_genomes_occurrences.median()
     # Mutational spectra
     class_annot = a.var_names.map(lambda x: x.split('_')[1]).value_counts().astype('int')
+    class_annot.index = class_annot.index.map(lambda x: f'mut_class_{x}')
     d = pd.concat([pd.Series(d), class_annot])
 
     # Spatial metrics
     if spatial_metrics:
         # Cell connectedness
         D = pairwise_distances(X_bin, metric=lambda x, y: np.sum(np.logical_and(x, y)))
-        cell_conn = np.ma.masked_equal(D, np.diag(D)).mean(axis=1).data
+        n_shared_muts = np.ma.masked_equal(D, np.diag(D)).mean(axis=1).data
+        cell_conn = (D>0).sum(axis=1)-1
+        d['median_n_shared_muts'] = np.median(n_shared_muts)
         d['median_connectedness'] = np.median(cell_conn)
-        d['mean_connectedness'] = np.mean(cell_conn)
         # Baseline tree internal nodes mutations support
         tree = build_tree(a, weights=weights, **tree_kwargs)
         tree_collapsed = tree.copy()
@@ -332,9 +334,10 @@ def filter_cells_and_vars(
     filtered_vars_df = vars_df.loc[a.var_names]
 
     # Add priors from external data sources
-    priors = pd.read_csv(path_priors, index_col=0)
-    vars_df['prior'] = priors.iloc[:,0]
-    filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
+    if path_priors is not None:
+        priors = pd.read_csv(path_priors, index_col=0)
+        vars_df['prior'] = priors.iloc[:,0]
+        filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
 
     # Lineage bias
     if lineage_column is not None:
@@ -364,7 +367,8 @@ def filter_cells_and_vars(
         dataset_df, 
         compute_metrics_filtered(
             a, spatial_metrics=spatial_metrics, 
-            weights=1-a.var['prior'].values, tree_kwargs=tree_kwargs
+            weights=1-a.var['prior'].values if path_priors is not None else None, 
+            tree_kwargs=tree_kwargs
         )
     ])
 
