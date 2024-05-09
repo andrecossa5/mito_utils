@@ -138,7 +138,7 @@ def make_vars_df(afm):
         np.column_stack([
             afm.X.mean(axis=0),
             afm.var_names.map(lambda x: mean_sites[x.split('_')[0]]),
-            np.ma.getdata(np.ma.mean(np.ma.masked_less_equal(afm.layers['quality'], 0), axis=0))
+            np.ma.getdata(np.ma.mean(np.ma.masked_less_equal(afm.layers['quality'].astype(np.int16), 0), axis=0))
         ]),
         columns=['mean_af', 'mean_cov', 'quality'],
         index=afm.var_names

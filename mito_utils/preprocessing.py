@@ -120,7 +120,7 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs=
 
     # Binarize
     t = .01 if 't' not in tree_kwargs else tree_kwargs['t']
-    X_bin = np.where(a.X>=t,1,0)
+    X_bin = np.where(a.X>=t,1,0).astype(np.int8)
     d = {}
 
     # n cells and vars
