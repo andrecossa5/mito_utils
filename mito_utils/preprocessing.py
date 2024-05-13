@@ -360,7 +360,7 @@ def filter_cells_and_vars(
     if lineage_column is not None:
         lineages = a.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
-            res = compute_lineage_biases(a, lineage_column, target_lineage, t=)
+            res = compute_lineage_biases(a, lineage_column, target_lineage, t=.01)
             test = filtered_vars_df.index.isin(res.query('FDR<=0.1').index)
             filtered_vars_df[f'enriched_{target_lineage}'] = test
 
