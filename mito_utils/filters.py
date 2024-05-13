@@ -24,7 +24,8 @@ filtering_options = [
     'seurat', 
     'MQuad', 
     'MQuad_optimized',
-    'density'
+    'density',
+    'MI_TO'
 ]
 
 
@@ -138,9 +139,10 @@ def make_vars_df(afm):
         np.column_stack([
             afm.X.mean(axis=0),
             afm.var_names.map(lambda x: mean_sites[x.split('_')[0]]),
-            np.ma.getdata(np.ma.mean(np.ma.masked_less_equal(afm.layers['quality'].astype(np.int16), 0), axis=0))
+            np.ma.getdata(np.ma.mean(np.ma.masked_less_equal(afm.layers['quality'].astype(np.int16), 0), axis=0)),
+            np.ma.getdata(np.ma.mean(np.ma.masked_less_equal(afm.X.astype(np.float16), 0), axis=0))
         ]),
-        columns=['mean_af', 'mean_cov', 'quality'],
+        columns=['mean_af', 'mean_cov', 'quality', 'median_af_in_positives'],
         index=afm.var_names
     )
 
@@ -696,6 +698,43 @@ def filter_weng2024(
 
     # Subset matrix
     filtered = afm[:, vars_df['weng_2024'].loc[lambda x: x=='Variable'].index].copy()
+    filtered = filter_sites(filtered) 
+
+    return filtered
+
+
+##
+
+
+def filter_MI_TO(
+    afm, 
+    min_site_cov=25, 
+    min_var_quality=30, 
+    min_frac_negative=.9,
+    min_n_positive=2,
+    af_confident_detection=.01,
+    min_n_confidently_detected=5,
+    min_median_af=.01
+    ):
+    """
+    Custom filter.
+    """
+    
+    vars_df = make_vars_df(afm)
+    n_confidently_detected = f'n{int(af_confident_detection*100)}'
+    vars_df = (
+        vars_df.loc[
+            (vars_df['mean_cov']>min_site_cov) & \
+            (vars_df['quality']>=min_var_quality) & \
+            (vars_df['n0']>min_frac_negative*afm.shape[0]) & \
+            (vars_df['Variant_CellN']>=min_n_positive) & \
+            (vars_df[n_confidently_detected]>=min_n_confidently_detected) & \
+            (vars_df['median_af_in_positives']>=min_median_af)     
+        ]
+    )
+
+    # Subset matrix
+    filtered = afm[:, vars_df.index].copy()
     filtered = filter_sites(filtered) 
 
     return filtered

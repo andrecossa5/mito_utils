@@ -142,7 +142,20 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs=
     # Mutational spectra
     class_annot = a.var_names.map(lambda x: x.split('_')[1]).value_counts().astype('int')
     class_annot.index = class_annot.index.map(lambda x: f'mut_class_{x}')
-    d = pd.concat([pd.Series(d), class_annot])
+    patterns = [ 'A>C', 'T>G', 'A>T', 'A>G', 'G>A', 'C>G', 'C>A', 'T>A', 'G>C', 'G>T', 'N>T', 'C>T', 'T>C' ]
+    transitions = [pattern for pattern in patterns if pattern in ['A>G', 'G>A', 'C>T', 'T>C']]
+    transversions = [pattern for pattern in patterns if pattern not in transitions and 'N' not in pattern]
+    n_transitions = class_annot.loc[class_annot.index.str.contains('|'.join(transitions))].sum()
+    n_transversions = class_annot.loc[class_annot.index.str.contains('|'.join(transversions))].sum()
+    # % lineage-biased mutations
+    perc_lineage_biased_df = a.var.loc[:,a.var.columns.str.startswith('enrich')].any(axis=1).sum() / a.var.shape[0]
+    # Collect
+    d = pd.concat([
+        pd.Series(d), 
+        class_annot,
+        pd.Series({'transitions_vs_transversions_ratio':n_transitions/n_transversions}),
+        pd.Series({'perc_lineage_biased_muts':perc_lineage_biased_df}),
+    ])
 
     # Spatial metrics
     if spatial_metrics:
@@ -224,7 +237,8 @@ def compute_lineage_biases(a, lineage_column, target_lineage, t=.01):
 
 
 def filter_cells_and_vars(
-    afm, filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, 
+    afm, sample_name=None,
+    filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, 
     filtering_kwargs={}, tree_kwargs={},
     spatial_metrics=False, path_priors=None, lineage_column=None, fit_mixtures=False,
     ):
@@ -274,6 +288,8 @@ def filter_cells_and_vars(
             a = filter_DADApy(a_cells)
         elif filtering == 'density':
             a = filter_density(a_cells, **filtering_kwargs)
+        elif filtering == 'MI_TO':
+            a = filter_MI_TO(a_cells, **filtering_kwargs)
 
     # elif filtering == 'LINEAGE_prep':
     # 
@@ -334,16 +350,17 @@ def filter_cells_and_vars(
     filtered_vars_df = vars_df.loc[a.var_names]
 
     # Add priors from external data sources
-    if path_priors is not None:
+    with_priors = path_priors is not None and sample_name is not None
+    if with_priors:
         priors = pd.read_csv(path_priors, index_col=0)
-        vars_df['prior'] = priors.iloc[:,0]
+        vars_df['prior'] = priors.loc[:,priors.columns!=sample_name].mean(axis=1)
         filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
 
     # Lineage bias
     if lineage_column is not None:
         lineages = a.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
-            res = compute_lineage_biases(a, lineage_column, target_lineage)
+            res = compute_lineage_biases(a, lineage_column, target_lineage, t=)
             test = filtered_vars_df.index.isin(res.query('FDR<=0.1').index)
             filtered_vars_df[f'enriched_{target_lineage}'] = test
 
@@ -367,12 +384,12 @@ def filter_cells_and_vars(
         dataset_df, 
         compute_metrics_filtered(
             a, spatial_metrics=spatial_metrics, 
-            weights=1-a.var['prior'].values if path_priors is not None else None, 
+            weights=1-a.var['prior'].values if with_priors else None, 
             tree_kwargs=tree_kwargs
         )
     ])
 
-    return vars_df, dataset_df, a
+    return dataset_df, a
 
 
 ##
