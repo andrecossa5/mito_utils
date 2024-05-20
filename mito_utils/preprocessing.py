@@ -119,7 +119,7 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs=
     """
 
     # Binarize
-    t = .01 if 't' not in tree_kwargs else tree_kwargs['t']
+    t = .05 if 't' not in tree_kwargs else tree_kwargs['t']
     X_bin = np.where(a.X>=t,1,0).astype(np.int8)
     d = {}
 
@@ -242,6 +242,7 @@ def filter_cells_and_vars(
     filtering_kwargs={}, tree_kwargs={},
     spatial_metrics=False, path_priors=None, lineage_column=None, fit_mixtures=False,
     ):
+
     """
     Filter cells and vars from an afm.
     """ 
@@ -339,6 +340,18 @@ def filter_cells_and_vars(
                 f'''The provided filtering method {filtering} is not supported.
                     Choose another one...'''
             )
+    
+    # Filter out cells not displaying at least one mut
+    if 'af_confident_detection' in filtering_kwargs:
+        t = filtering_kwargs['af_confident_detection']
+    elif 't' in tree_kwargs:
+        t = tree_kwargs['t']    
+    else:
+        t = .05
+    X_bin = np.where(a.X>=t, 1, 0)
+    a = a[a.obs_names[X_bin.sum(axis=1)>=1],:]
+    a.uns['per_position_coverage'] = a.uns['per_position_coverage'].loc[a.obs_names,:]
+    a.uns['per_position_quality'] = a.uns['per_position_quality'].loc[a.obs_names,:]
 
     # Final dataset and filtered MT-SNVs metrics to evalutate the selected MT-SNVs space quality
     print(f'Filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
@@ -360,7 +373,8 @@ def filter_cells_and_vars(
     if lineage_column is not None:
         lineages = a.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
-            res = compute_lineage_biases(a, lineage_column, target_lineage, t=.01)
+            res = compute_lineage_biases(a, lineage_column, target_lineage, t=t)
+            filtered_vars_df[f'lineage_bias_{target_lineage}'] = res['lineage_bias']
             test = filtered_vars_df.index.isin(res.query('FDR<=0.1').index)
             filtered_vars_df[f'enriched_{target_lineage}'] = test
 

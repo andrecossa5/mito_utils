@@ -119,6 +119,7 @@ def pair_d(data, metric='jaccard', t=.01, weights=None, ncores=8, metric_kwargs=
         if metric in PAIRWISE_BOOLEAN_FUNCTIONS:
             X = np.where(X>=t,1,0)
         if weights is not None:
+            weights = np.array(weights)
             X = X * weights
         D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False)
 
