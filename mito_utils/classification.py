@@ -86,7 +86,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         pipe = Pipeline( 
             steps=[ 
 
-                ('pp', StandardScaler()), # Always scale expression features
+                ('pp', StandardScaler()), # Always scale MT-SNVs features
                 (key, models[key])
             ]
         )

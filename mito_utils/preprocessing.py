@@ -282,7 +282,7 @@ def filter_cells_and_vars(
         elif filtering == 'weng2024':
             a = filter_weng2024(a_cells, **filtering_kwargs)
         elif filtering == 'MQuad':
-            a = filter_Mquad(a_cells, nproc=nproc, **filtering_kwargs)
+            a = filter_Mquad(a_cells, nproc=nproc, path_=os.getcwd(), **filtering_kwargs)
         elif filtering == 'MQuad_optimized':
             a = filter_Mquad_optimized(a_cells, nproc=nproc, **filtering_kwargs)
         elif filtering == 'DADApy':
