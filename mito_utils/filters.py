@@ -105,7 +105,8 @@ def filter_cell_clones(afm, min_cell_number=10):
     min_cell_number cells.
     """
     print(f'Filtering cells from clones with >={min_cell_number} cells')
-          
+    
+    n0 = afm.shape[0]
     cell_counts = afm.obs.groupby('GBC').size()
     clones_to_retain = cell_counts[cell_counts>=min_cell_number].index 
     test = afm.obs['GBC'].isin(clones_to_retain)
@@ -113,7 +114,7 @@ def filter_cell_clones(afm, min_cell_number=10):
     afm.uns['per_position_quality'] = afm.uns['per_position_quality'].loc[test, :]
     afm = afm[test, :].copy()
 
-    print(f'Removed other {afm-afm.shape[0]} cells')
+    print(f'Removed other {n0-afm.shape[0]} cells')
     print(f'Retaining {afm.obs["GBC"].unique().size} clones for the analysis.')
           
     return afm
