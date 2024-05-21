@@ -51,14 +51,12 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
             os.path.join(path_data, sample, 'cells_summary_table.csv'), 
             index_col=0
         )
-        valid_cbcs = valid_cbcs & set(cbc_gbc_df.index)
+        valid_cbcs = set(valid_cbcs) & set(cbc_gbc_df.index)
     
     # Subset
     print(f'Valid cells: {len(valid_cbcs)}')
     cells = list(valid_cbcs)
     A = A[cells, :].copy()
-    if with_GBC:
-        cbc_gbc_df = cbc_gbc_df.loc[cells, :]
 
     # Clean UMI counts for good enough (average) Base-Calling quality
     A = clean_BC_quality(A)
@@ -69,6 +67,9 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
     MAD = np.median(np.abs(x-median))
     test = (x<=median+nmads*MAD) & (x>=mean_coverage)  # Test
     A = A[test,:].copy()                               # Filtering 
+    if with_GBC:
+        cbc_gbc_df = cbc_gbc_df.loc[A.obs_names, :]
+        
     print(f'Filtered cells (i.e., mean MT-genome coverage >={mean_coverage} and <={median+nmads*MAD:.2f}): {A.shape[0]}')
 
     # Format into a complete afm
