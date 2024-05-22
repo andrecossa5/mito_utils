@@ -128,7 +128,7 @@ def bootstrap_allele_counts(ad, dp, frac=.8):
 ##
 
 
-def bootstrap_allele_tables(ad=None, dp=None, M=None):
+def bootstrap_allele_tables(ad=None, dp=None, M=None, frac_resampled=.9):
     """
     Bootstrapping of ad and dp count tables. ad --> alternative counts
     dp --> coverage at that site. NB: AD and DP are assumed in for cells x variants. 
@@ -138,7 +138,10 @@ def bootstrap_allele_tables(ad=None, dp=None, M=None):
     if ad is not None and dp is not None:
 
         n = ad.shape[1]
-        resampled_idx = np.random.choice(np.arange(n), n, replace=True)   
+        if frac_resampled == 1:
+            resampled_idx = np.random.choice(np.arange(n), n, replace=True) 
+        else:    
+            resampled_idx = np.random.choice(np.arange(n), round(n*frac_resampled), replace=False)   
         ad = ad if not issparse(ad) else ad.A
         dp = dp if not issparse(dp) else dp.A
         new_ad = ad[:,resampled_idx]

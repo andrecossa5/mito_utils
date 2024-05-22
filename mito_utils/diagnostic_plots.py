@@ -207,13 +207,13 @@ def vars_AF_dist(afm, ax=None, color='b', title=None):
     for i in range(to_plot.shape[1]):
         x = to_plot[:, i]
         x = np.sort(x)
-        ax.plot(x, '--', color=color, linewidth=0.5)
+        ax.plot(x, '-', color=color, linewidth=0.5)
 
     if title is None:
         t = 'Ranked AF distributions, per variant'
     else:
         t = title
-    format_ax(ax=ax, title=t, xlabel='Cell rank', ylabel='AF')
+    format_ax(ax=ax, title=t, xlabel='Cells (ranked)', ylabel='Allelic Frequency (AF)')
 
     return ax
 
@@ -422,14 +422,15 @@ def MT_coverage_polar(afm, ax=None, title=None):
 ##
 
 
-def MT_coverage_by_gene_polar(afm, df_mt, ax=None, title='Gene coverage'):
+def MT_coverage_by_gene_polar(afm, ax=None, title='Gene coverage'):
     """
     Plot log10 nUMIs coverare across MT-genome positions.
     """
 
+    df_mt = pd.DataFrame(all_mt_genes_positions, columns=['gene', 'start', 'end']).set_index('gene')
     df_mt = df_mt.sort_values('start')
-    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
 
+    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
     theta = np.linspace(0, 2*np.pi, len(x))
     ticks = df_mt['start'] + ((df_mt['end']-df_mt['start'])/2)
     ticks = (ticks - ticks.min()) / (ticks.max() - ticks.min())
@@ -437,19 +438,20 @@ def MT_coverage_by_gene_polar(afm, df_mt, ax=None, title='Gene coverage'):
 
     colors = { k:v for k,v in zip(df_mt.index, sc.pl.palettes.default_102[:df_mt.shape[0]])}
 
+    ax.plot(theta, np.log10(x), '-', linewidth=.7, color='grey')
     idx = np.arange(1,x.size+1)
     for gene in colors:
         start, stop = df_mt.loc[gene, ['start', 'end']].values
         test = (idx>=start) & (idx<=stop)
-        ax.plot(theta[test], np.log10(x[test]), color=colors[gene], linewidth=1)
+        ax.plot(theta[test], np.log10(x[test]), color=colors[gene], linewidth=1.5)
 
     ax.set_theta_offset(np.pi/2)
     ax.set_xticks(ticks)
     ax.set_xticklabels(df_mt.index)
-    ax.xaxis.set_tick_params(labelsize=5)
+    ax.xaxis.set_tick_params(labelsize=4)
     ax.set_yticks([])
     ax.set_yticklabels([])
-    ax.set_title(title)
+    ax.set(xlabel='MT-genome position (bp)', title=title)
 
     return ax
 
