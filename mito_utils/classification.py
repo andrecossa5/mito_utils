@@ -32,7 +32,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         LogisticRegression(solver='saga', penalty='elasticnet', n_jobs=cores_model, max_iter=10000),
         
         'xgboost' : 
-        LGBMClassifier(n_jobs=cores_model, learning_rate=0.1),
+        LGBMClassifier(objective='binary', n_jobs=cores_model),
         
         'kNN' :
         KNeighborsClassifier(n_jobs=cores_model)
@@ -48,9 +48,17 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         
         'xgboost' : 
         {
-            "xgboost__num_leaves" : np.arange(20, 3000, 600),
-            "xgboost__n_estimators" : np.arange(100, 600, 100),
-            "xgboost__max_depth" : np.arange(3, 12, 2)
+            'xgboost__num_leaves': [31, 63, 127],
+            'xgboost__learning_rate': [0.01, 0.05, 0.1],
+            'xgboost__n_estimators': [100, 500, 1000],
+            'xgboost__max_depth': [-1, 10, 20, 30],
+            'xgboost__min_child_samples': [20, 50, 100],
+            'xgboost__subsample': [0.6, 0.8, 1.0],
+            'xgboost__subsample_freq': [0, 5, 10],
+            'xgboost__colsample_bytree': [0.6, 0.8, 1.0],
+            'xgboost__reg_alpha': [0.0, 0.1, 1.0],
+            'xgboost__reg_lambda': [0.0, 0.1, 1.0],
+            'xgboost__scale_pos_weight': [1, 10, 50, 100]
         },
 
         'SVM':
