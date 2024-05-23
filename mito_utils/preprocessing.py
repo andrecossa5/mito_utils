@@ -14,6 +14,15 @@ from mito_utils.phylo import *
 ##
 
 
+##
+
+patterns = [ 'A>C', 'T>G', 'A>T', 'A>G', 'G>A', 'C>G', 'C>A', 'T>A', 'G>C', 'G>T', 'N>T', 'C>T', 'T>C' ]
+transitions = [pattern for pattern in patterns if pattern in ['A>G', 'G>A', 'C>T', 'T>C']]
+transversions = [pattern for pattern in patterns if pattern not in transitions and 'N' not in pattern]
+
+##
+
+
 def nans_as_zeros(afm):
     """
     Fill nans with zeros.
@@ -143,9 +152,6 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs=
     # Mutational spectra
     class_annot = a.var_names.map(lambda x: x.split('_')[1]).value_counts().astype('int')
     class_annot.index = class_annot.index.map(lambda x: f'mut_class_{x}')
-    patterns = [ 'A>C', 'T>G', 'A>T', 'A>G', 'G>A', 'C>G', 'C>A', 'T>A', 'G>C', 'G>T', 'N>T', 'C>T', 'T>C' ]
-    transitions = [pattern for pattern in patterns if pattern in ['A>G', 'G>A', 'C>T', 'T>C']]
-    transversions = [pattern for pattern in patterns if pattern not in transitions and 'N' not in pattern]
     n_transitions = class_annot.loc[class_annot.index.str.contains('|'.join(transitions))].sum()
     n_transversions = class_annot.loc[class_annot.index.str.contains('|'.join(transversions))].sum()
     # % lineage-biased mutations

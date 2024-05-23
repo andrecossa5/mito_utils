@@ -726,6 +726,8 @@ def filter_MI_TO(
     
     vars_df = make_vars_df(afm)
     n_confidently_detected = f'n{int(af_confident_detection*100)}'
+    if not n_confidently_detected in vars_df.columns:
+        vars_df[n_confidently_detected] = np.sum(afm.X>af_confident_detection, axis=0)
     vars_df = (
         vars_df.loc[
             (vars_df['mean_cov']>min_site_cov) & \
