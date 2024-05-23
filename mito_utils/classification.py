@@ -69,8 +69,8 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
 
         'kNN' :
         {
-            "kNN__n_neighbors" : np.arange(5, 100, 25),
-            "kNN__metric" : ['cosine', 'l2', 'euclidean']
+            "kNN__n_neighbors" : np.arange(5, 50, 5),
+            "kNN__metric" : ['cosine', 'jaccard', 'euclidean']
         }
 
     }
