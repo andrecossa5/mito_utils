@@ -6,6 +6,9 @@ import logging
 import numpy as np
 import pandas as pd
 import scipy.stats as stats
+from scipy.special import binom
+from scipy.stats import fisher_exact
+from statsmodels.sandbox.stats.multicomp import multipletests
 from mquad.mquad import *
 from scipy.sparse import coo_matrix, csc_matrix
 from itertools import chain
@@ -25,7 +28,9 @@ filtering_options = [
     'MQuad', 
     'MQuad_optimized',
     'density',
-    'MI_TO'
+    'MI_TO',
+    'GT_stringent',
+    'GT_enriched'
 ]
 
 ##
@@ -97,6 +102,17 @@ def filter_sites(afm):
     afm.uns['per_position_quality'] = afm.uns['per_position_quality'].loc[cells, sites_retained]
 
     return afm
+
+
+##
+
+
+def filter_cells_with_at_least_one(a, t=.05):
+    X_bin = np.where(a.X>=t, 1, 0)
+    a = a[a.obs_names[X_bin.sum(axis=1)>=1],:]
+    a.uns['per_position_coverage'] = a.uns['per_position_coverage'].loc[a.obs_names,:]
+    a.uns['per_position_quality'] = a.uns['per_position_quality'].loc[a.obs_names,:]
+    return a
 
 
 ##
@@ -744,6 +760,238 @@ def filter_MI_TO(
     filtered = filter_sites(filtered) 
 
     return filtered
+
+
+##
+
+
+def rank_clone_variants(
+    a, var='GBC', group=None,
+    filter_vars=True, rank_by='custom_perc_tresholds', 
+    min_median_af_in_positive=.01,
+    min_clone_perc=.75, max_perc_rest=.25, log2_min_perc_ratio=.2
+    ):
+    """
+    Rank a clone variants.
+    """
+    test = a.obs[var] == group
+    AF_clone = np.nanmean(a.X[test,:], axis=0)
+    AF_rest = np.nanmean(a.X[~test, :], axis=0)
+    log2FC = np.log2(AF_clone+1)-np.log2(AF_rest+1)
+    perc_all = np.sum(a.X>0, axis=0) / a.shape[0]
+    perc_clone = np.sum(a.X[test,:]>0, axis=0) / a[test,:].shape[0]
+    perc_rest = np.sum(a.X[~test,:]>0, axis=0) / a[~test,:].shape[0]
+    perc_ratio = np.log2(perc_clone+1) - np.log2(perc_rest+1)
+    df_vars = pd.DataFrame({
+        'median_AF_clone' : AF_clone,
+        'median_AF_rest' : AF_rest,
+        'log2FC': log2FC, 
+        'perc_clone': perc_clone, 
+        'perc_rest': perc_rest, 
+        'log2_perc_ratio': perc_ratio,
+        'perc_all' : perc_all,
+        },
+        index=a.var_names
+    )
+    df_vars['n_cells_clone'] = np.sum(test)
+
+    # Filter variants
+    if filter_vars:
+        if rank_by == 'log2_perc_ratio':
+            test = f'log2_perc_ratio >= @log2_min_perc_ratio & perc_clone >= @min_clone_perc & median_AF_clone>=@min_median_af_in_positive'
+            df_vars = df_vars.query(test)
+        elif rank_by == 'custom_perc_tresholds':
+            test = f'perc_rest <= @max_perc_rest & perc_clone >= @min_clone_perc & median_AF_clone>=@min_median_af_in_positive'
+            df_vars = df_vars.query(test)
+            df_vars.shape
+    else:
+        print('Returning all variants, ranked...')
+
+    # Sort
+    df_vars = df_vars.sort_values('log2_perc_ratio', ascending=False)
+
+    return df_vars
+
+
+##
+
+
+def summary_stats_vars(afm, variants=None):
+    """
+    Calculate the most important summary stats for a bunch of variants, collected for
+    a set of cells.
+    """
+
+    if variants is not None:
+        test = afm.var_names.isin(variants)
+        afm = afm[:,test]
+
+    density = (~np.isnan(afm.X)).sum(axis=0) / afm.shape[0]
+    median_vafs = np.nanmedian(afm.X, axis=0)
+    mean_vafs = np.nanmean(afm.X, axis=0)
+    var_vafs = np.nanvar(afm.X, axis=0)
+    vmr_vafs = (var_vafs + 0.000001) / mean_vafs
+    median_coverage_var = np.nanmedian(afm.layers['coverage'], axis=0)
+    fr_positives = np.sum(afm.X>0, axis=0) / afm.shape[0]
+    var_names = afm.var_names
+
+    df = pd.DataFrame(
+        {   
+            'density' : density,
+            'median_coverage' : median_coverage_var,
+            'median_AF' : median_vafs,
+            'VMR_AF' : vmr_vafs,
+            'fr_positives' : fr_positives,
+        }, index=var_names
+    )
+    df['VMR_rank'] = df['VMR_AF'].rank(ascending=False).astype('int')
+
+    return df
+
+
+##
+
+
+def filter_GT_stringent(afm, lineage_column='GBC', min_clone_perc=.75, max_perc_rest=.25, min_median_af_in_positive=.01):
+    """
+    Given an afm matrix with a <cov> columns in .obs wich correspond to 
+    ground truth clones, filter cells and vars.
+    """
+
+    if lineage_column is not None and lineage_column in afm.obs.columns:
+        pass
+    else:
+        raise ValueError(f'{lineage_column} is not available in afm.obs!')
+    
+    gt_l = [
+        rank_clone_variants(
+            afm, var=lineage_column, group=g, 
+            min_clone_perc=min_clone_perc, max_perc_rest=max_perc_rest,
+            min_median_af_in_positive=min_median_af_in_positive
+        ).assign(clone=g)
+        for g in afm.obs[lineage_column].unique()
+    ]
+    df_gt = pd.concat(gt_l).join(summary_stats_vars(afm))
+    vois_df = (
+        df_gt
+        .sort_values('log2_perc_ratio', ascending=False)
+        .loc[:, 
+            [
+                'median_AF_clone', 'median_AF_rest', 'perc_clone', 
+                'perc_rest', 'log2_perc_ratio', 'n_cells_clone', 'clone'
+            ]
+        ]
+    )
+    vois = vois_df.index.unique()
+
+    lineages = afm.obs[lineage_column].unique().to_list()
+    id_lineages = vois_df['clone'].unique().tolist()
+    clones_df = (
+        pd.DataFrame([ x in id_lineages for x in lineages ], index=lineages, columns=['id_lineage'])
+        .join(vois_df.groupby('clone').size().to_frame('n_vars'))
+        .join(vois_df.reset_index().groupby('clone')['index'].unique().map(lambda x: '; '.join(x)).to_frame('vars'))
+    )
+    cells = afm.obs[lineage_column].loc[lambda x: x.isin(id_lineages)].index
+    filtered = afm[cells, vois].copy()
+    filtered = filter_sites(filtered) 
+
+    return filtered, clones_df
+
+
+##
+
+
+def compute_lineage_biases(a, lineage_column, target_lineage, t=.01):
+    """
+    Compute -log10(FDR) Fisher's exact test: lineage biases of some mutation.
+    """
+
+    n = a.shape[0]
+    muts = a.var_names
+
+    target_ratio_array = np.zeros(muts.size)
+    oddsratio_array = np.zeros(muts.size)
+    pvals = np.zeros(muts.size)
+
+    # Here we go
+    for i, mut in enumerate(muts):
+
+        test_mut = a[:,mut].X.flatten() >= t 
+        test_lineage = a.obs[lineage_column] == target_lineage
+
+        mut_size = test_mut.sum()
+        mut_lineage_size = (test_mut & test_lineage).sum()
+        target_ratio = mut_lineage_size / mut_size
+        target_ratio_array[i] = target_ratio
+        other_mut_lineage_size = (~test_mut & test_lineage).sum()
+
+        # Fisher
+        oddsratio, pvalue = fisher_exact(
+            [
+                [mut_lineage_size, mut_size - mut_lineage_size],
+                [other_mut_lineage_size, n - other_mut_lineage_size],
+            ],
+            alternative='greater',
+        )
+        oddsratio_array[i] = oddsratio
+        pvals[i] = pvalue
+
+    # Correct pvals --> FDR
+    pvals = multipletests(pvals, alpha=0.05, method="fdr_bh")[1]
+
+    # Results
+    results = (
+        pd.DataFrame({
+            'perc_in_target_lineage' : target_ratio_array,
+            'odds_ratio' : oddsratio_array,
+            'FDR' : pvals,
+            'lineage_bias' : -np.log10(pvals) 
+        }, index=muts
+        )
+        .sort_values('lineage_bias', ascending=False)
+    )
+
+    return results
+
+
+##
+
+
+def filter_GT_enriched(afm, lineage_column='GBC', t=.05, fdr_treshold=.1, n_enriched_groups=2):
+
+    """
+    Given an afm matrix with a <cov> columns in .obs wich correspond to 
+    ground truth clones, filter cells and vars.
+    """
+
+    if lineage_column is not None and lineage_column in afm.obs.columns:
+        pass
+    else:
+        raise ValueError(f'{lineage_column} is not available in afm.obs!')
+    
+    L = []
+    lineages = afm.obs[lineage_column].dropna().unique()
+    for target_lineage in lineages:
+        print(f'Computing variants enrichment for lineage {target_lineage}...')
+        res = compute_lineage_biases(afm, lineage_column, target_lineage, t=t)
+        L.append(res['FDR']<=fdr_treshold)
+    
+    df_enrich = pd.concat(L, axis=1)
+    df_enrich.columns = lineages
+    test = df_enrich.apply(lambda x: np.sum(x>0)>0 and np.sum(x>0)<=n_enriched_groups, axis=1)
+
+    vois = df_enrich.loc[test].index.unique()
+    id_lineages = df_enrich.loc[test].sum(axis=0).loc[lambda x: x>0].index.to_list()
+    clones_df = (
+        pd.DataFrame([ x in id_lineages for x in lineages ], index=lineages, columns=['id_lineage'])
+        .join(df_enrich.loc[test].sum(axis=0).to_frame('n_vars'))
+        .join(df_enrich.loc[test].apply(lambda x: '; '.join(x.index[x>0]), axis=0).to_frame('vars'))
+    )
+    cells = afm.obs[lineage_column].loc[lambda x: x.isin(id_lineages)].index
+    filtered = afm[cells, vois].copy()
+    filtered = filter_sites(filtered) 
+
+    return filtered, clones_df 
 
 
 ##

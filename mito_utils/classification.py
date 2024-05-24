@@ -164,7 +164,7 @@ def classification(X, y, key='logit', GS=True, n_combos=50, score='f1', cores_mo
         'precision' : precision_score(y_test, y_pred),
         'recall' : recall_score(y_test, y_pred),
         'f1' : f1_score(y_test, y_pred),
-        'AUCPR' : auc(recalls, precisions)
+        'AUPRC' : auc(recalls, precisions)
     }
 
     if full_output:

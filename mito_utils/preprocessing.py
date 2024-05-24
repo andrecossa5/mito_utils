@@ -2,9 +2,6 @@
 Module to create and process AFMs.
 """
 
-from scipy.special import binom
-from scipy.stats import fisher_exact
-from statsmodels.sandbox.stats.multicomp import multipletests
 from mito_utils.filters import *
 from mito_utils.make_afm import *
 from mito_utils.distances import *
@@ -187,67 +184,15 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs=
 ##
 
 
-def compute_lineage_biases(a, lineage_column, target_lineage, t=.01):
-    """
-    Compute -log10(FDR) Fisher's exact test: lineage biases of some mutation.
-    """
-
-    n = a.shape[0]
-    muts = a.var_names
-
-    target_ratio_array = np.zeros(muts.size)
-    oddsratio_array = np.zeros(muts.size)
-    pvals = np.zeros(muts.size)
-
-    # Here we go
-    for i, mut in enumerate(muts):
-
-        test_mut = a[:,mut].X.flatten() >= t 
-        test_lineage = a.obs[lineage_column] == target_lineage
-
-        mut_size = test_mut.sum()
-        mut_lineage_size = (test_mut & test_lineage).sum()
-        target_ratio = mut_lineage_size / mut_size
-        target_ratio_array[i] = target_ratio
-        other_mut_lineage_size = (~test_mut & test_lineage).sum()
-
-        # Fisher
-        oddsratio, pvalue = fisher_exact(
-            [
-                [mut_lineage_size, mut_size - mut_lineage_size],
-                [other_mut_lineage_size, n - other_mut_lineage_size],
-            ],
-            alternative='greater',
-        )
-        oddsratio_array[i] = oddsratio
-        pvals[i] = pvalue
-
-    # Correct pvals --> FDR
-    pvals = multipletests(pvals, alpha=0.05, method="fdr_bh")[1]
-
-    # Results
-    results = (
-        pd.DataFrame({
-            'perc_in_target_lineage' : target_ratio_array,
-            'odds_ratio' : oddsratio_array,
-            'FDR' : pvals,
-            'lineage_bias' : -np.log10(pvals) 
-        }, index=muts
-        )
-        .sort_values('lineage_bias', ascending=False)
-    )
-
-    return results
-
-
-##
-
-
 def filter_cells_and_vars(
     afm, sample_name=None,
     filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, 
+    af_confident_detection=.05,
     filtering_kwargs={}, tree_kwargs={},
-    spatial_metrics=False, path_priors=None, lineage_column=None, fit_mixtures=False,
+    spatial_metrics=False, 
+    path_priors=None, max_prior=1,
+    fit_mixtures=False, only_positive_deltaBIC=False,
+    lineage_column=None, with_clones_df=False, 
     ):
 
     """
@@ -298,26 +243,10 @@ def filter_cells_and_vars(
             a = filter_density(a_cells, **filtering_kwargs)
         elif filtering == 'MI_TO':
             a = filter_MI_TO(a_cells, **filtering_kwargs)
-
-    # elif filtering == 'LINEAGE_prep':
-    # 
-    #     # n cells
-    #     print(f'Feature selection method: {filtering}')
-    #     print(f'Original AFM n cells: {afm.shape[0]}')
-    #     a_cells = afm.copy()
-    # 
-    #     if min_cell_number > 0:
-    #         n_cells = a_cells.shape[0]
-    #         print(f'Filtering cells from clones with >{min_cell_number} cells')
-    #         cell_counts = a_cells.obs.groupby('GBC').size()
-    #         clones_to_retain = cell_counts[cell_counts>min_cell_number].index 
-    #         test = a_cells.obs['GBC'].isin(clones_to_retain)
-    #         a_cells.uns['per_position_coverage'] = a_cells.uns['per_position_coverage'].loc[test, :]
-    #         a_cells.uns['per_position_quality'] = a_cells.uns['per_position_quality'].loc[test, :]
-    #         a_cells = a_cells[test, :].copy()
-    #         print(f'Removed other {n_cells-a_cells.shape[0]} cells')
-    #         print(f'Retaining {a_cells.obs["GBC"].unique().size} clones for the analysis.')
-    #     a = a_cells.copy()
+        elif filtering == 'GT_stringent':
+            a, clones_df = filter_GT_stringent(a_cells, **filtering_kwargs)
+        elif filtering == 'GT_enriched':
+            a, clones_df = filter_GT_enriched(a_cells, **filtering_kwargs)
 
     elif cells is None and variants is not None:
 
@@ -348,17 +277,13 @@ def filter_cells_and_vars(
                     Choose another one...'''
             )
     
-    # Filter out cells not displaying at least one mut
+    # Retrieve af_confident_detection treshold
     if 'af_confident_detection' in filtering_kwargs:
-        t = filtering_kwargs['af_confident_detection']
+        af_confident_detection = filtering_kwargs['af_confident_detection']
     elif 't' in tree_kwargs:
-        t = tree_kwargs['t']    
-    else:
-        t = .05
-    X_bin = np.where(a.X>=t, 1, 0)
-    a = a[a.obs_names[X_bin.sum(axis=1)>=1],:]
-    a.uns['per_position_coverage'] = a.uns['per_position_coverage'].loc[a.obs_names,:]
-    a.uns['per_position_quality'] = a.uns['per_position_quality'].loc[a.obs_names,:]
+        af_confident_detection = tree_kwargs['t']
+    # Filter cells with at leaast one muts above af_confident_detection
+    a = filter_cells_with_at_least_one(a, t=af_confident_detection)
 
     # Final dataset and filtered MT-SNVs metrics to evalutate the selected MT-SNVs space quality
     print(f'Filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
@@ -377,28 +302,30 @@ def filter_cells_and_vars(
         filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
 
     # Lineage bias
-    if lineage_column is not None:
+    if lineage_column is not None and filtering != 'GT_enriched':
         lineages = a.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
-            res = compute_lineage_biases(a, lineage_column, target_lineage, t=t)
+            res = compute_lineage_biases(a, lineage_column, target_lineage, t=af_confident_detection)
             filtered_vars_df[f'lineage_bias_{target_lineage}'] = res['lineage_bias']
             test = filtered_vars_df.index.isin(res.query('FDR<=0.1').index)
             filtered_vars_df[f'enriched_{target_lineage}'] = test
 
     # Bimodal mixture modelling deltaBIC (MQuad-like)
     if fit_mixtures:
-        filtered_vars_df = (
-            filtered_vars_df
-            .join(
-                fit_MQuad_mixtures(a)
-                .dropna()
-                [['deltaBIC']]
-            )
-        )
+        filtered_vars_df = filtered_vars_df.join(fit_MQuad_mixtures(a).dropna()[['deltaBIC']])
 
     # Add all filtered variants metadata to afm
     assert all(a.var_names == filtered_vars_df.index)
     a.var = filtered_vars_df
+
+    # Last (optional filters):
+    if fit_mixtures and only_positive_deltaBIC:
+        a = a[:,a.var['deltaBIC']>0].copy()
+    if with_priors and max_prior<1:
+        a = a[:,a.var['prior']<max_prior].copy()
+    if max_prior<1 or only_positive_deltaBIC:
+        a = filter_cells_with_at_least_one(a, t=af_confident_detection)
+        print(f'Lats filters: filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
     
     # Last dataset stats
     dataset_df = pd.concat([
@@ -410,135 +337,10 @@ def filter_cells_and_vars(
         )
     ])
 
-    return dataset_df, a
-
-
-##
-
-
-def rank_clone_variants(
-    a, var='GBC', group=None,
-    filter_vars=True, rank_by='log2_perc_ratio', 
-    min_clone_perc=.5, max_perc_rest=.2, min_perc_all=.1, log2_min_perc_ratio=.2
-    ):
-    """
-    Rank a clone variants.
-    """
-    test = a.obs[var] == group
-    AF_clone = np.nanmean(a.X[test,:], axis=0)
-    AF_rest = np.nanmean(a.X[~test, :], axis=0)
-    log2FC = np.log2(AF_clone+1)-np.log2(AF_rest+1)
-    perc_all = np.sum(a.X>0, axis=0) / a.shape[0]
-    perc_clone = np.sum(a.X[test,:]>0, axis=0) / a[test,:].shape[0]
-    perc_rest = np.sum(a.X[~test,:]>0, axis=0) / a[~test,:].shape[0]
-    perc_ratio = np.log2(perc_clone+1) - np.log2(perc_rest+1)
-    df_vars = pd.DataFrame({
-        'median_AF_clone' : AF_clone,
-        'median_AF_rest' : AF_rest,
-        'log2FC': log2FC, 
-        'perc_clone': perc_clone, 
-        'perc_rest': perc_rest, 
-        'log2_perc_ratio': perc_ratio,
-        'perc_all' : perc_all,
-        },
-        index=a.var_names
-    )
-    df_vars['n_cells_clone'] = np.sum(test)
-
-    # Filter variants
-    if filter_vars:
-        if rank_by == 'log2_perc_ratio':
-            test = f'log2_perc_ratio >= @log2_min_perc_ratio & perc_clone >= @min_clone_perc'
-            df_vars = df_vars.query(test)
-        elif rank_by == 'custom_perc_tresholds':
-            test = f'perc_rest <= @max_perc_rest & perc_clone >= @min_clone_perc'
-            df_vars = df_vars.query(test)
-            df_vars.shape
+    if filtering in ['GT_stringent', 'GT_enriched'] and with_clones_df:
+        return dataset_df, a, clones_df
     else:
-        print('Returning all variants, ranked...')
-
-    # Sort
-    df_vars = df_vars.sort_values('log2_perc_ratio', ascending=False)
-
-    return df_vars
-
-
-##
-
-
-def summary_stats_vars(afm, variants=None):
-    """
-    Calculate the most important summary stats for a bunch of variants, collected for
-    a set of cells.
-    """
-    if variants is not None:
-        test = afm.var_names.isin(variants)
-        density = (~np.isnan(afm[:, test].X)).sum(axis=0) / afm.shape[0]
-        median_vafs = np.nanmedian(afm[:, test].X, axis=0)
-        mean_vafs = np.nanmean(afm[:, test].X, axis=0)
-        var_vafs = np.nanvar(afm[:, test].X, axis=0)
-        vmr_vafs = (var_vafs + 0.000001) / mean_vafs
-        median_coverage_var = np.nanmedian(afm[:, test].layers['coverage'], axis=0)
-        fr_positives = np.sum(afm[:, test].X > 0, axis=0) / afm.shape[0]
-        var_names = afm.var_names[test]
-    else:
-        density = (~np.isnan(afm.X)).sum(axis=0) / afm.shape[0]
-        median_vafs = np.nanmedian(afm.X, axis=0)
-        mean_vafs = np.nanmean(afm.X, axis=0)
-        var_vafs = np.nanvar(afm.X, axis=0)
-        vmr_vafs = (var_vafs + 0.000001) / mean_vafs
-        median_coverage_var = np.nanmedian(afm.layers['coverage'], axis=0)
-        fr_positives = np.sum(afm.X > 0, axis=0) / afm.shape[0]
-        var_names = afm.var_names
-
-    df = pd.DataFrame(
-        {   
-            'density' : density,
-            'median_coverage' : median_coverage_var,
-            'median_AF' : median_vafs,
-            'VMR_AF' : vmr_vafs,
-            'fr_positives' : fr_positives,
-        }, index=var_names
-    )
-    df['VMR_rank'] = df['VMR_AF'].rank(ascending=False).astype('int')
-
-    return df
-
-
-##
-
-
-def filter_afm_with_gt(afm, t=.75, rest=.25):
-    """
-    Given an afm matrix with a <cov> columns in .obs wich correspond to 
-    ground truth clones, filter cells and vars.
-    """
-    a_cells = filter_baseline(a_cells)
-    gt_l = [
-        rank_clone_variants(
-            a_cells, var='GBC', group=g, rank_by='custom_perc_tresholds',
-            min_clone_perc=t, max_perc_rest=rest
-        ).assign(clone=g)
-        for g in a_cells.obs['GBC'].unique()
-    ]
-    df_gt = pd.concat(gt_l).join(summary_stats_vars(a_cells))
-
-    vois_df = (
-        df_gt
-        .query('n_cells_clone>=@min_cells_clone')
-        .sort_values('log2_perc_ratio', ascending=False)
-        .loc[:, 
-            [
-                'median_AF_clone', 'median_AF_rest', 'perc_clone', 
-                'perc_rest', 'log2_perc_ratio', 'n_cells_clone', 'clone'
-            ]
-        ]
-    )
-    vois = vois_df.index.unique()
-    cells = a_cells.obs['GBC'].loc[lambda x: x.isin(vois_df['clone'])].index
-    d_metrics, a = filter_cells_and_vars(afm, cells=cells, variants=vois)
-
-    return d_metrics, a
+        return dataset_df, a
 
 
 ##
