@@ -728,12 +728,12 @@ def filter_weng2024(
 
 def filter_MI_TO(
     afm, 
-    min_site_cov=25, 
+    min_site_cov=10, 
     min_var_quality=30, 
-    min_frac_negative=.9,
-    min_n_positive=2,
-    af_confident_detection=.01,
-    min_n_confidently_detected=5,
+    min_frac_negative=0.2,
+    min_n_positive=5,
+    af_confident_detection=.05,
+    min_n_confidently_detected=3,
     min_median_af=.01
     ):
     """
@@ -751,7 +751,7 @@ def filter_MI_TO(
             (vars_df['n0']>min_frac_negative*afm.shape[0]) & \
             (vars_df['Variant_CellN']>=min_n_positive) & \
             (vars_df[n_confidently_detected]>=min_n_confidently_detected) & \
-            (vars_df['median_af_in_positives']>=min_median_af)     
+            (vars_df['median_af_in_positives']>=min_median_af)
         ]
     )
 

@@ -377,7 +377,8 @@ def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
 
     elif isinstance(c, dict) and by is None:
         if all([ True if k in df[x].unique() else False for k in c.keys() ]):
-            sns.boxplot(data=df, x=x, y=y, palette=c.values(), ax=ax, saturation=0.7, order=order, **params)
+            palette = [c[category] for category in order]
+            sns.boxplot(data=df, x=x, y=y, palette=palette, ax=ax, saturation=0.7, order=order, **params)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
@@ -420,7 +421,8 @@ def strip(df, x, y, by=None, c=None, a=1, l=None, s=5, ax=None, with_stats=False
 
     elif isinstance(c, dict) and by is None:
         if all([ True if k in df[x].unique() else False for k in c.keys() ]):
-            ax = sns.stripplot(data=df, x=x, y=y, palette=c.values(), ax=ax, size=s, order=order)
+            palette = [c[category] for category in order]
+            ax = sns.stripplot(data=df, x=x, y=y, palette=palette, ax=ax, size=s, order=order)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')

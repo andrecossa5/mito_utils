@@ -2,11 +2,12 @@
 Miscellaneous utilities.
 """
 
-from shutil import rmtree
-import logging
 import os 
 import time 
 import pickle
+import json
+from shutil import rmtree
+import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -145,5 +146,33 @@ def ji(x, y):
     ji = len(x&y) / len(x|y)
 
     return ji
+
+
+##
+
+
+
+def process_json(path_filtering, filtering_key):
+    """
+    Processing the filtering options .json file.
+    """
+    
+    with open(path_filtering, 'r') as file:
+        FILTERING_OPTIONS = json.load(file)
+    
+    if filtering_key in FILTERING_OPTIONS:
+        d = FILTERING_OPTIONS[filtering_key]
+        filtering = d['filtering']
+        filtering_kwargs = d['filtering_kwargs'] if 'filtering_kwargs' in d else {}
+        kwargs = d['kwargs'] if 'kwargs' in d else {}
+        kwargs = {k: True if v == "True" else v for k, v in kwargs.items()}         # Nextflow and .json pain
+        kwargs = {k: False if v == "False" else v for k, v in kwargs.items()}
+    else:
+        raise KeyError(f'{filtering_key} not in {path_filtering}!')
+    
+    return filtering, filtering_kwargs, kwargs
+
+
+##
 
 

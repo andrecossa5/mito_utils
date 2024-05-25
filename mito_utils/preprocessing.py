@@ -187,6 +187,7 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, tree_kwargs=
 def filter_cells_and_vars(
     afm, sample_name=None,
     filtering=None, min_cell_number=0, cells=None, variants=None, nproc=8, 
+    max_AD_counts=1,
     af_confident_detection=.05,
     filtering_kwargs={}, tree_kwargs={},
     spatial_metrics=False, 
@@ -277,11 +278,12 @@ def filter_cells_and_vars(
                     Choose another one...'''
             )
     
-    # Retrieve af_confident_detection treshold
+    # Retrieve af_confident_detection treshold, if present, else use default 0.01.
     if 'af_confident_detection' in filtering_kwargs:
         af_confident_detection = filtering_kwargs['af_confident_detection']
     elif 't' in tree_kwargs:
         af_confident_detection = tree_kwargs['t']
+
     # Filter cells with at leaast one muts above af_confident_detection
     a = filter_cells_with_at_least_one(a, t=af_confident_detection)
 
@@ -323,9 +325,16 @@ def filter_cells_and_vars(
         a = a[:,a.var['deltaBIC']>0].copy()
     if with_priors and max_prior<1:
         a = a[:,a.var['prior']<max_prior].copy()
-    if max_prior<1 or only_positive_deltaBIC:
-        a = filter_cells_with_at_least_one(a, t=af_confident_detection)
-        print(f'Lats filters: filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
+    if max_AD_counts>1:
+        a = filter_sites(a)
+        AD, _, _ = get_AD_DP(a)
+        test_max_ad_alleles = np.max(AD.A.T, axis=0)>=max_AD_counts
+        a = a[:,test_max_ad_alleles].copy()
+
+    # Final fixes
+    a = filter_cells_with_at_least_one(a, t=af_confident_detection)
+    a = filter_sites(a)
+    print(f'Last filters: filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
     
     # Last dataset stats
     dataset_df = pd.concat([
@@ -344,3 +353,5 @@ def filter_cells_and_vars(
 
 
 ##
+
+
