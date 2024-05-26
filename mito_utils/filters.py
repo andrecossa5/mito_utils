@@ -852,7 +852,7 @@ def summary_stats_vars(afm, variants=None):
 ##
 
 
-def filter_GT_stringent(afm, lineage_column='GBC', min_clone_perc=.75, max_perc_rest=.25, min_median_af_in_positive=.01):
+def filter_GT_stringent(afm, lineage_column=None, min_clone_perc=.75, max_perc_rest=.25, min_median_af_in_positive=.01):
     """
     Given an afm matrix with a <cov> columns in .obs wich correspond to 
     ground truth clones, filter cells and vars.

@@ -34,7 +34,7 @@ def nans_as_zeros(afm):
 
 
 
-def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC=False, nmads=3, mean_coverage=25):
+def read_one_sample(path_data, sample='MDA_clones', cell_file='barcodes.txt', only_variants=True, with_GBC=False, nmads=3, mean_coverage=25):
     """
     Read and format one sample AFM. Path data should be folder with a <sample> subfolder, storing:
     * 'AFM.h5ad', the maegatk output produced by mito_preprocessing Nextflow pipeline
@@ -46,7 +46,7 @@ def read_one_sample(path_data, sample='MDA_clones', only_variants=True, with_GBC
 
     # Read maegatk output
     A = sc.read(os.path.join(path_data, sample, 'AFM.h5ad'))
-    barcodes = pd.read_csv(os.path.join(path_data, sample, 'barcodes.txt'), index_col=0, header=None)
+    barcodes = pd.read_csv(os.path.join(path_data, sample, cell_file), index_col=0, header=None)
 
     # Filter cell barcodes
     valid_cbcs = set(A.obs_names) & set(barcodes.index)
@@ -245,9 +245,9 @@ def filter_cells_and_vars(
         elif filtering == 'MI_TO':
             a = filter_MI_TO(a_cells, **filtering_kwargs)
         elif filtering == 'GT_stringent':
-            a, clones_df = filter_GT_stringent(a_cells, **filtering_kwargs)
+            a, clones_df = filter_GT_stringent(a_cells, lineage_column=lineage_column, **filtering_kwargs)
         elif filtering == 'GT_enriched':
-            a, clones_df = filter_GT_enriched(a_cells, **filtering_kwargs)
+            a, clones_df = filter_GT_enriched(a_cells, lineage_column=lineage_column, **filtering_kwargs)
 
     elif cells is None and variants is not None:
 
