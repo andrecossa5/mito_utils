@@ -616,25 +616,27 @@ def get_internal_node_muts(tree, internal_node):
 ##
 
 
-def assess_internal_node_muts(a, clades, c, high_af=.01):
+def assess_internal_node_muts(a, clades, c, high_af=.05):
     """
     Assess the prevalence of all MT-SNVs assigned to a single internal node 
     within its clade (p1), and outside of it (p0). Return useful stats.
     """
-    muts, cells = clades[c]
+    cells = list(clades[c])
     other_cells = a.obs_names[~a.obs_names.isin(cells)]
-    p1 = np.where(a[cells, muts].X>=high_af,1,0).sum(axis=0) / len(cells)
-    p0 = np.where(a[other_cells, muts].X>=high_af,1,0).sum(axis=0) / len(other_cells)
-    af1 = np.median(a[cells, muts].X, axis=0)
-    af0 = np.median(a[other_cells, muts].X, axis=0)
+    p1 = np.where(a[cells,:].X>=high_af,1,0).sum(axis=0) / len(cells)
+    p0 = np.where(a[other_cells, :].X>=high_af,1,0).sum(axis=0) / len(other_cells)
+    af1 = np.median(a[cells,:].X, axis=0)
+    af0 = np.median(a[other_cells, :].X, axis=0)
+    muts = a.var_names
     top_mut = (
         pd.DataFrame(
-            {'p1':p1,'p0':p0, 'median_af0':af0, 'median_af1':af1, 
+            {'p1':p1,'p0':p0, 'median_af1':af1, 'median_af0':af0, 
              'clade':[c]*len(muts), 'ncells':[len(cells)]*len(muts)}, 
             index=muts
         )
         .assign(p_ratio=lambda x: x['p1']/x['p0']+.0001)
         .assign(af_ratio=lambda x: x['median_af1']/x['median_af0']+.0001)
+        .query('median_af1>=@high_af and median_af0==0')
         .sort_values('p_ratio', ascending=False)
     )
     return top_mut

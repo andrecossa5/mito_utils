@@ -4,6 +4,7 @@ Module to create custom distance function among cell AF profiles.
 
 import numpy as np
 import pandas as pd
+import sklearn.preprocessing as pp
 from itertools import product
 from sklearn.metrics import pairwise_distances, recall_score, precision_score, auc
 from sklearn.metrics.pairwise import PAIRWISE_BOOLEAN_FUNCTIONS
@@ -99,7 +100,7 @@ def prep_X_cov(a):
 
 
 
-def pair_d(data, metric='jaccard', t=.01, weights=None, ncores=8, metric_kwargs={}):
+def pair_d(data, metric='jaccard', t=.01, weights=None, scale=False, ncores=8, metric_kwargs={}):
     """
     Function for calculating (possibly weighted) pairwise distances among cells 
     """
@@ -121,6 +122,8 @@ def pair_d(data, metric='jaccard', t=.01, weights=None, ncores=8, metric_kwargs=
         if weights is not None:
             weights = np.array(weights)
             X = X * weights
+        if scale:
+            X = pp.scale(X)
         D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False)
 
     return D

@@ -220,8 +220,13 @@ def filter_cells_and_vars(
         if min_cell_number > 0:
             a_cells = filter_cell_clones(afm, min_cell_number=min_cell_number)
        
-        # Filter MT-SNVs
+        # Filter MT-SNVs, baseline
         a_cells = filter_baseline(a_cells)
+        var_sites = a_cells.var_names.map(lambda x: x.split('_')[0])
+        test = var_sites.value_counts()[var_sites]==1
+        a_cells = a_cells[:,a_cells.var_names[test]].copy()
+        a_cells = filter_sites(a_cells)
+
         if filtering == 'baseline':
             a = a_cells.copy()
         if filtering == 'CV':
