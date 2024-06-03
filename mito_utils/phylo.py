@@ -643,3 +643,40 @@ def assess_internal_node_muts(a, clades, c, high_af=.05):
 
 
 ##
+
+
+def get_supporting_muts(tree, a, t=.05):
+    """
+    For each clade, rank its supporting mutations.
+    """
+    clades = get_clades(tree)
+    stats = []
+    for c in clades:
+        if c != 'root':
+            top_mut = assess_internal_node_muts(a, clades, c, high_af=t)
+            stats.append(top_mut)
+    final_muts = pd.concat(stats)
+    muts = final_muts.index.unique().tolist()
+        
+    return muts
+
+
+##
+
+
+def sort_muts(tree):
+    """
+    Sort all tree mutations for plotting,
+    """
+    muts = (
+        tree.cell_meta
+        .loc[tree.leaves]
+        .apply(lambda x: tree.cell_meta.columns[x.argmax()], axis=1)
+        .drop_duplicates()
+        .to_list()
+    )
+
+    return muts
+
+
+##
