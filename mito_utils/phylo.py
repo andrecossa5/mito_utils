@@ -3,9 +3,9 @@ Utils for phylogenetic inference.
 """
 
 import cassiopeia as cs
+import networkx as nx
 from cassiopeia.plotting.local import *
 from scipy.sparse import issparse
-from scipy.spatial.distance import cdist
 from plotting_utils._utils import *
 from mito_utils.distances import *
 from mito_utils.preprocessing import *
@@ -677,6 +677,35 @@ def sort_muts(tree):
     )
 
     return muts
+
+
+##
+
+
+def calculate_corr_distances(tree):
+    """
+    Calculate correlation between tree and character matrix cell-cell distances. 
+    """
+
+    try:
+        D = tree.get_dissimilarity_map()
+    except:
+        print('No precomputed character distances...')
+        D = pair_d(tree.character_matrix, t=.05)
+    D = D.loc[tree.leaves, tree.leaves]
+
+    L = []
+    undirected = tree.get_tree_topology().to_undirected()
+    for node in tree.leaves:
+        d = nx.shortest_path_length(undirected, source=node, weight="length")
+        L.append(d)
+    D_phylo = pd.DataFrame(L, index=tree.leaves)
+    D_phylo = D_phylo.loc[tree.leaves, tree.leaves]
+
+    scale = lambda x: (x-x.mean())/x.std()
+    corr = np.corrcoef(scale(D.values.flatten()), scale(D_phylo.values.flatten()))[0,1]
+
+    return corr
 
 
 ##
