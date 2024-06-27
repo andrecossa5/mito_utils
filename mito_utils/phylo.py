@@ -3,12 +3,12 @@ Utils for phylogenetic inference.
 """
 
 import cassiopeia as cs
-import networkx as nx
 from cassiopeia.plotting.local import *
 from scipy.sparse import issparse
 from plotting_utils._utils import *
 from mito_utils.distances import *
 from mito_utils.preprocessing import *
+from mito_utils.phylo_io import *
 
 
 ##
@@ -340,104 +340,9 @@ def calculate_FBP(obs_tree, tree_list):
                 supports[k] += 1
 
     supports = pd.Series(supports)/len(tree_list)
+    supports = (supports * 100).astype(int)
 
-    return supports
-
-
-##
-
-
-def map_leaves(clade, leaves):
-    """
-    Map a treee leaves to a clade sides (1 heavy and 0 light).
-    """
-    mapping = np.array([ x in clade for x in leaves ])
-    sum1 = mapping.sum()
-    sum0 = mapping.size-sum1
-    p = min(sum1, sum0)
-    mapping = mapping if sum1>=sum0 else ~mapping
-    mapping = { k:v for k,v in zip(leaves, mapping.astype(np.int0)) }
-
-    return mapping, p
-
-
-##
-
-
-def ts_one_chunk(L, mapping, p):
-    """
-    Calculate the bootstrap support of a single obs_clade, defined by 
-    its mapping, in a chunk of boot_trees.
-    """
-
-    S = []
-    for boot_tree in L:
-        boot_clades = get_clades(boot_tree, with_root=False, with_singletons=True)
-
-        TD = []
-        for b in boot_clades:
-            boot_clade_counts = (
-                pd.Categorical(
-                    [ mapping[x] for x in boot_clades[b] ], categories=[0,1]
-                )
-                .value_counts()
-            )
-            l = len(boot_tree.leaves)
-            l0 = boot_clade_counts[0]
-            l1 = boot_clade_counts[1]
-            transfer_distance = min(p-l0+l1, l-p-l1+l0)
-            TD.append(transfer_distance)
-
-        transfer_index = np.min(TD)
-        support = 1-transfer_index/(p-1)
-        S.append(support)
-
-    return S
-
-
-##
-
-
-def calculate_ts(tree_list, mapping, p, n_jobs=8):
-    """
-    Calculate the bootstrap support of a single obs_clade, defined by 
-    its mapping, in a list of bootstrap trees.
-    """
-    starting_idx = chunker(len(tree_list))
-    with parallel_backend("loky", inner_max_num_threads=1):
-        S = np.concatenate(
-            Parallel(n_jobs=n_jobs)(
-                delayed(ts_one_chunk)(
-                    tree_list[starting_idx[i] : starting_idx[i+1]], 
-                    mapping, 
-                    p
-                )
-                for i in range(n_jobs)
-            )
-        )
-
-    return S
-
-
-##
-
-
-def calculate_TBE_I(obs_tree, tree_list, n_jobs=8):
-    """
-    Calculate TBE from Lamoine et al., 2018 and their proposed algorithm.
-    """
-    obs_clades = get_clades(obs_tree, with_root=False)
-    leaves_order = obs_tree.leaves
-    supports = {}
-    
-    for o in obs_clades:
-        mapping, p = map_leaves(obs_clades[o], leaves_order)
-        S = calculate_ts(tree_list, mapping, p, n_jobs=n_jobs)
-        supports[o] = np.mean(S)
-    
-    supports = pd.Series(supports)
-
-    return supports
+    return supports.to_dict()
 
 
 ##
@@ -495,7 +400,7 @@ def compute_TBE_hamming_one_tree(obs_clades, leaves_order, boot_tree, n_jobs=8):
 ##
 
 
-def calculate_TBE_II(obs_tree, tree_list, n_jobs=8):
+def calculate_TBE(obs_tree, tree_list, n_jobs=8):
     """
     Calculate TBE from Lamoine et al., 2018 and the definition of transfer distance
     from the Hamming of clades bi-partition encodings.
@@ -511,14 +416,15 @@ def calculate_TBE_II(obs_tree, tree_list, n_jobs=8):
             )
         )
     supports = pd.Series(np.mean(supports, axis=0), index=obs_clades.keys())
+    supports = (supports * 100).astype(int)
 
-    return supports
+    return supports.to_dict()
 
 
 ##
 
 
-def calculate_supports(obs_tree, tree_list, method='tbe_II', n_jobs=8):
+def calculate_supports(obs_tree, tree_list, method='TBE', n_jobs=8):
     """
     Calculates internal nodes bootstrap support. Two algorithms
     implemented:
@@ -526,28 +432,19 @@ def calculate_supports(obs_tree, tree_list, method='tbe_II', n_jobs=8):
     - tbe: Transfer Bootstrap Expectations, transfer distance-based method, suitable
            for big phylogenies.
     """
-    # FBP
-    if method == 'fbp':
+
+    if method == 'FBP':
         supports = calculate_FBP(obs_tree, tree_list)
-    # TBE
-    elif method == 'tbe_I':
-        supports = calculate_TBE_I(obs_tree, tree_list, n_jobs=n_jobs)
-    elif method == 'tbe_II':
-        supports = calculate_TBE_II(obs_tree, tree_list, n_jobs=n_jobs)
+    elif method == 'TBE':
+        supports = calculate_TBE(obs_tree, tree_list, n_jobs=n_jobs)
     else:
         raise ValueError('No other method implemented so far...')
 
-    # Format supports into final df
-    df = (
-        supports
-        .to_frame('support')
-        .assign(
-            time=lambda x: [ obs_tree.get_time(k) for k in x.index ],
-            n_cells=lambda x: [ len(obs_tree.leaves_in_subtree(k)) for k in x.index ]
-        )
-    )
+    tree = obs_tree.copy()
+    for node in supports:
+        tree.set_attribute(node, 'support', supports[node])
 
-    return df
+    return tree
 
 
 ##
