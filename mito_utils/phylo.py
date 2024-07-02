@@ -584,20 +584,24 @@ def calculate_corr_distances(tree):
     Calculate correlation between tree and character matrix cell-cell distances. 
     """
 
-    try:
+    if tree.get_dissimilarity_map() is not None:
         D = tree.get_dissimilarity_map()
-    except:
-        print('No precomputed character distances...')
-        D = pair_d(tree.character_matrix, t=.05)
-    D = D.loc[tree.leaves, tree.leaves]
-
+    else:
+        if tree.character_matrix is not None:
+            D = pair_d(tree.character_matrix, t=.05)
+            D = pd.DataFrame(D, index=tree.character_matrix.index, columns=tree.character_matrix.index)
+            D = D.loc[tree.leaves, tree.leaves]
+        else:
+            raise ValueError('No precomputed character distances...')
+    
     L = []
     undirected = tree.get_tree_topology().to_undirected()
     for node in tree.leaves:
         d = nx.shortest_path_length(undirected, source=node, weight="length")
         L.append(d)
-    D_phylo = pd.DataFrame(L, index=tree.leaves)
-    D_phylo = D_phylo.loc[tree.leaves, tree.leaves]
+    D_phylo = pd.DataFrame(L, index=tree.leaves).loc[tree.leaves, tree.leaves]
+
+    assert (D_phylo.index == D.index).all()
 
     scale = lambda x: (x-x.mean())/x.std()
     corr = np.corrcoef(scale(D.values.flatten()), scale(D_phylo.values.flatten()))[0,1]

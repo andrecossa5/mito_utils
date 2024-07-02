@@ -2,6 +2,7 @@
 I/O functions to read/write CassiopeiaTrees from annotated (supports) .newick strigs.
 """
 
+import anndata
 import pandas as pd
 from cassiopeia.data import CassiopeiaTree
 from Bio import Phylo
@@ -126,7 +127,7 @@ def write_newick(tree: CassiopeiaTree, path=None):
 ##
 
 
-def create_from_annot(nodes: pd.DataFrame, edges: pd.DataFrame) -> CassiopeiaTree:
+def create_from_annot(nodes: pd.DataFrame, edges: pd.DataFrame, afm: anndata.AnnData) -> CassiopeiaTree:
     """
     Helper function to reate a CassiopeiaTree from two nodes and edges dfs. 
     Set nodes and branch attributes from scratch.
@@ -147,6 +148,13 @@ def create_from_annot(nodes: pd.DataFrame, edges: pd.DataFrame) -> CassiopeiaTre
 
     G = nx.DiGraph()
 
+    # Fix nodes names
+    map_leaves = { k:v for k,v in zip(nodes['node'], nodes['cell']) if isinstance(v, str) }
+    mapping = lambda x: map_leaves[x] if x in map_leaves else x
+    edges['u'] = edges['u'].map(mapping)
+    edges['v'] = edges['v'].map(mapping)
+    nodes['node'] = nodes['node'].map(mapping)
+
     for node in nodes['node'].unique():
         attributes = {
             **nodes.loc[nodes['node']==node].iloc[:,:5].drop_duplicates().iloc[0,:].to_dict(),
@@ -159,7 +167,9 @@ def create_from_annot(nodes: pd.DataFrame, edges: pd.DataFrame) -> CassiopeiaTre
         attributes = edges.drop(columns=['u','v'], inplace=False).loc[edge].to_dict()
         G.add_edge(u, v, **attributes)
     
-    tree = CassiopeiaTree(tree=G)
+    cells = afm.obs_names[afm.obs_names.isin(G.nodes)]
+    char_X = pd.DataFrame(afm.X, columns=afm.var_names, index=afm.obs_names).loc[cells]
+    tree = CassiopeiaTree(character_matrix=char_X, tree=G, cell_meta=afm.obs.loc[cells])
 
     return tree
 
