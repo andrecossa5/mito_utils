@@ -34,7 +34,7 @@ def nans_as_zeros(afm):
 
 
 
-def read_one_sample(path_data, sample='MDA_clones', cell_file='barcodes.txt', only_variants=True, with_GBC=False, nmads=3, mean_coverage=25):
+def read_one_sample(path_data, sample='MDA_clones', cell_file='barcodes.txt', only_variants=True, with_GBC=False, nmads=7, mean_coverage=25):
     """
     Read and format one sample AFM. Path data should be folder with a <sample> subfolder, storing:
     * 'AFM.h5ad', the maegatk output produced by mito_preprocessing Nextflow pipeline
@@ -62,7 +62,7 @@ def read_one_sample(path_data, sample='MDA_clones', cell_file='barcodes.txt', on
     # Subset
     print(f'Valid cells: {len(valid_cbcs)}')
     cells = list(valid_cbcs)
-    A = A[cells, :].copy()
+    A = A[cells,:].copy()
 
     # Clean UMI counts for good enough (average) Base-Calling quality
     A = clean_BC_quality(A)
@@ -87,9 +87,9 @@ def read_one_sample(path_data, sample='MDA_clones', cell_file='barcodes.txt', on
     )
     afm.obs = afm.obs.assign(sample=sample)
     
-    if with_GBC:
-        afm.obs['GBC'] = afm.obs['GBC_Set']
-        afm.obs = afm.obs.drop(columns=['GBC_Set'])
+    # if with_GBC:
+    #     afm.obs['GBC'] = afm.obs['GBC_Set']
+    #     afm.obs = afm.obs.drop(columns=['GBC_Set'])
 
     return afm
 

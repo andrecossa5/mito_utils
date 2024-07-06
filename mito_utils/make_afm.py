@@ -114,7 +114,7 @@ def format_matrix(A, cbc_gbc_df=None, with_GBC=True, only_variants=True):
 
     # Add labels to .obs
     if with_GBC and cbc_gbc_df is not None:
-        A.obs['GBC_Set'] = pd.Categorical(cbc_gbc_df['GBC_set'])
+        A.obs['GBC'] = pd.Categorical(cbc_gbc_df['GBC'])
 
     # For each position and cell, compute each base AF and quality tables
     A_cov, A_x, A_qual = create_one_base_tables(A, 'A', only_variants=only_variants)
