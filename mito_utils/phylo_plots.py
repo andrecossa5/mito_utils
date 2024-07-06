@@ -108,7 +108,6 @@ def _place_tree_and_annotations(
                 vmin_annot, 
                 vmax_annot
             )
-
         elif pd.api.types.is_string_dtype(x):
             if isinstance(categorical_cmap, str):
                 categorical_cmap = create_palette(tree.cell_meta, feat, categorical_cmap)
@@ -142,6 +141,7 @@ def _set_colors(d, meta=None, cov=None, cmap=None, kwargs=None, vmin=None, vmax=
     """
     Create a dictionary of elements colors.
     """
+
     if meta is not None and cov is not None:
         if cov in meta.columns:
             x = meta[cov]
@@ -162,8 +162,10 @@ def _set_colors(d, meta=None, cov=None, cmap=None, kwargs=None, vmin=None, vmax=
                         .to_dict()
                     )
             elif isinstance(cmap, dict):
-                print('User provide colors dictionary...')
+                print('User-provided colors dictionary...')
                 colors = meta[cov].map(cmap).to_dict()
+            else:
+                raise KeyError(f'{cov} You can either specify a string cmap or an element:color dictionary.')
         else:
             raise KeyError(f'{cov} not present in cell_meta.')
     else:
@@ -181,7 +183,7 @@ def plot_tree(
     continuous_cmap_annot='mako', vmin_annot=.01, vmax_annot=.1,
     colorstrip_spacing=.05, colorstrip_width=1, 
     meta_branches=None, cov_branches=None, cmap_branches='Spectral_r',
-    cov_leaves=None, cmap_leaves=ten_godisnot,
+    cov_leaves=None, cmap_leaves='tab20',
     meta_internal_nodes=None, cov_internal_nodes=None, cmap_internal_nodes='Spectral_r',
     leaves_labels=False, internal_node_labels=False,
     internal_node_vmin=.2, internal_node_vmax=.8, 
@@ -248,7 +250,8 @@ def plot_tree(
     ##
 
     # Leaves 
-    _leaf_kwargs = {'markersize':0, 'c':'k', 'marker':'o'}
+    leave_size = 2 if cov_leaves is not None else 0
+    _leaf_kwargs = {'markersize':leave_size, 'c':'k', 'marker':'o'}
     _leaf_kwargs.update(leaf_kwargs or {})
     leaves = { node : node_coords[node] for node in node_coords if tree.is_leaf(node) }
     colors = _set_colors(

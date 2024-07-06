@@ -80,6 +80,7 @@ def reduce_dimensions(afm, method='PCA', metric='euclidean', k=15, n_comps=30,
     Util to create dimension-reduced representation of the input SNVs AFM.
     """
     # Get AFM np.array
+    np.random.seed(seed)
     X = afm.X
 
     # Sqrt and scale, optionally

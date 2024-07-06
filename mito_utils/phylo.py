@@ -586,6 +586,7 @@ def calculate_corr_distances(tree):
 
     if tree.get_dissimilarity_map() is not None:
         D = tree.get_dissimilarity_map()
+        D = D.loc[tree.leaves, tree.leaves] # In case root is there...
     else:
         if tree.character_matrix is not None:
             D = pair_d(tree.character_matrix, t=.05)
@@ -600,7 +601,6 @@ def calculate_corr_distances(tree):
         d = nx.shortest_path_length(undirected, source=node, weight="length")
         L.append(d)
     D_phylo = pd.DataFrame(L, index=tree.leaves).loc[tree.leaves, tree.leaves]
-
     assert (D_phylo.index == D.index).all()
 
     scale = lambda x: (x-x.mean())/x.std()

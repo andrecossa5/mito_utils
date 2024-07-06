@@ -87,15 +87,17 @@ def create_one_base_tables(A, base, only_variants=True):
     qual = np.round(q / (m + 0.000001))
 
     # Re-format
-    A.var['wt_allele'] = A.var['wt_allele'].str.capitalize()
-    variant_names = A.var.index + '_' + A.var['wt_allele'] + f'>{base}'
+    ref_col = 'wt_allele' if 'wt_allele' in A.var.columns else 'ref'
+    assert ref_col in A.var.columns
+    A.var[ref_col] = A.var[ref_col].str.capitalize()
+    variant_names = A.var.index + '_' + A.var[ref_col] + f'>{base}'
     df_x = pd.DataFrame(X, index=A.obs_names, columns=variant_names)
     df_qual = pd.DataFrame(qual, index=A.obs_names, columns=variant_names)
     df_cov = pd.DataFrame(cov, index=A.obs_names, columns=variant_names)
     gc.collect()
 
     if only_variants:
-        test = (A.var['wt_allele'] != base).values
+        test = (A.var[ref_col] != base).values
         return df_cov.loc[:, test], df_x.loc[:, test], df_qual.loc[:, test]
     else:
         return df_cov, df_x, df_qual
