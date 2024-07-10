@@ -416,6 +416,7 @@ def calculate_TBE(obs_tree, tree_list, n_jobs=8):
             )
         )
     supports = pd.Series(np.mean(supports, axis=0), index=obs_clades.keys())
+    supports.loc[supports.isna()] = 0
     supports = (supports * 100).astype(int)
 
     return supports.to_dict()
