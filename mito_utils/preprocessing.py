@@ -309,7 +309,7 @@ def filter_cells_and_vars(
         filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
 
     # Lineage bias
-    if lineage_column is not None and filtering != 'GT_enriched':
+    if lineage_column is not None:
         lineages = a.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
             res = compute_lineage_biases(a, lineage_column, target_lineage, t=af_confident_detection)
