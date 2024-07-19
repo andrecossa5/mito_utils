@@ -12,6 +12,13 @@ from mito_utils.plotting_base import *
 ##
 
 
+_categorical_cmaps = ['tab10', 'set1', 'dark']
+_continuous_cmaps = ['mako', 'viridis', 'inferno', 'magma']
+
+
+##
+
+
 def _to_polar_coords(d):
 
     new_d = {}
@@ -57,8 +64,8 @@ def _place_tree_and_annotations(
     extend_branches=True, 
     angled_branches=True, 
     add_root=True, 
-    continuous_cmap='viridis', 
-    categorical_cmap='tab10', 
+    continuous_cmaps=None, 
+    categorical_cmaps=None, 
     vmin_annot=None, vmax_annot=None, 
     colorstrip_width=None, 
     colorstrip_spacing=None
@@ -89,6 +96,9 @@ def _place_tree_and_annotations(
     colorstrips = []
     meta = meta or []
     
+    n_cat = 0
+    n_cont = 0
+
     for feat in meta:
 
         if feat in tree.cell_meta.columns:
@@ -97,6 +107,15 @@ def _place_tree_and_annotations(
             raise KeyError(f'{feat} not in CassiopeiaTree.cell_meta.')
 
         if pd.api.types.is_numeric_dtype(x):
+
+            if continuous_cmaps is None:
+                continuous_cmap = _continuous_cmaps[n_cont]
+            else:
+                if feat in continuous_cmaps:
+                    continuous_cmap = continuous_cmaps[feat]
+                else:
+                    raise KeyError(f'{feat} not present in meta. Adjust continuos_cmaps and meta params...')
+                
             colorstrip, anchor_coords = create_continuous_colorstrip(
                 x.to_dict(), 
                 anchor_coords,
@@ -108,11 +127,25 @@ def _place_tree_and_annotations(
                 vmin_annot, 
                 vmax_annot
             )
+
+            n_cont += 1
+
         elif pd.api.types.is_string_dtype(x):
-            if isinstance(categorical_cmap, str):
-                categorical_cmap = create_palette(tree.cell_meta, feat, categorical_cmap)
-            elif categorical_cmap is None:
-                categorical_cmap = create_palette(tree.cell_meta, feat, ten_godisnot)
+
+            if categorical_cmaps is None:
+                categorical_cmap = create_palette(tree.cell_meta, feat, _categorical_cmaps[n_cat])
+            else:
+                if feat in categorical_cmaps:
+                    if isinstance(categorical_cmaps[feat], str) or isinstance(categorical_cmaps[feat], list):
+                        categorical_cmap = create_palette(tree.cell_meta, feat, categorical_cmaps[feat])
+                    elif isinstance(categorical_cmaps[feat], dict):
+                        categorical_cmap = categorical_cmaps[feat]
+                    else:
+                        raise ValueError(f'Adjust categorical_cmaps. {feat} : categorical_cmaps is nor a str, a list or a dict...')
+                    assert all([ cat in categorical_cmap.keys() for cat in x.unique() ])
+                else:
+                    raise KeyError(f'{feat} not present in meta. Adjust categorical_cmaps and meta params...')
+
             boxes, anchor_coords = ut.place_colorstrip(
                 anchor_coords, width, tight_height, spacing, loc
             )
@@ -120,6 +153,9 @@ def _place_tree_and_annotations(
             for leaf in x.index:
                 cat = x.loc[leaf]
                 colorstrip[leaf] = boxes[leaf] + (categorical_cmap[cat], f"{leaf}\n{cat}")
+
+            n_cat += 1
+
         else:
             raise ValueError(f'{feat} in meta has {x.dtype} dtype. Check meta...')
 
@@ -179,11 +215,11 @@ def _set_colors(d, meta=None, cov=None, cmap=None, kwargs=None, vmin=None, vmax=
 
 def plot_tree(
     tree, ax=None, depth_key=None, orient=90, extend_branches=True, angled_branches=True,
-    add_root=False, meta=None, categorical_cmap_annot='tab20',
-    continuous_cmap_annot='mako', vmin_annot=.01, vmax_annot=.1,
+    add_root=False, meta=None, categorical_cmaps=None,
+    continuous_cmaps='mako', vmin_annot=.01, vmax_annot=.1,
     colorstrip_spacing=.05, colorstrip_width=1, 
     meta_branches=None, cov_branches=None, cmap_branches='Spectral_r',
-    cov_leaves=None, cmap_leaves='tab20',
+    cov_leaves=None, cmap_leaves='tab20', 
     meta_internal_nodes=None, cov_internal_nodes=None, cmap_internal_nodes='Spectral_r',
     leaves_labels=False, internal_node_labels=False,
     internal_node_vmin=.2, internal_node_vmax=.8, 
@@ -213,8 +249,8 @@ def plot_tree(
         extend_branches=extend_branches, 
         angled_branches=angled_branches, 
         add_root=add_root, 
-        continuous_cmap=continuous_cmap_annot, 
-        categorical_cmap=categorical_cmap_annot, 
+        continuous_cmaps=continuous_cmaps, 
+        categorical_cmaps=categorical_cmaps, 
         vmin_annot=vmin_annot, 
         vmax_annot=vmax_annot, 
         colorstrip_width=colorstrip_width, 

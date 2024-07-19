@@ -94,7 +94,10 @@ def _to_newick_str(g, node):
         branch_length_str = ":" + str(g[parent][node]["branch_length"])
 
     if 'support' in g.nodes[node] and g.nodes[node]['support'] is not None:
-        support_str = str(g.nodes[node]['support'])
+        try:
+            support_str = str(int(g.nodes[node]['support']))
+        except:
+            support_str = "0"
 
     _name = str(node)
     return (

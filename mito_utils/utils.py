@@ -176,3 +176,30 @@ def process_json(path_filtering, filtering_key):
 ##
 
 
+
+def traverse_and_extract_flat(base_dir, file_name='annotated_tree.pickle'):
+
+    result = {}
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if file == file_name:
+                full_path = os.path.join(root, file)
+                
+                # Determine the file extension and load accordingly
+                if file_name.endswith('.pickle'):
+                    with open(full_path, 'rb') as f:
+                        data = pickle.load(f)
+                elif file_name.endswith('.csv'):
+                    data = pd.read_csv(full_path, index_col=0)
+                else:
+                    raise ValueError(f"Unsupported file type: {file_name}")
+
+                # Extracting the relevant folder parts
+                relative_path = os.path.relpath(root, base_dir)
+                folder_parts = tuple(relative_path.split(os.sep))
+                
+                # Using tuple of folder parts as the key
+                result[folder_parts] = data
+
+    return result
+
