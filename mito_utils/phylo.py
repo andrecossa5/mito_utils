@@ -611,3 +611,62 @@ def calculate_corr_distances(tree):
 
 
 ##
+
+
+def CI(tree):
+    """
+    Calculate the Consistency Index (CI) of tree characters.
+    """
+    tree.reconstruct_ancestral_characters()
+    observed_changes = np.zeros(tree.n_character)
+    for parent, child in tree.depth_first_traverse_edges():
+        p_states = np.array(tree.get_character_states(parent))
+        c_states = np.array(tree.get_character_states(child))
+        changes = (p_states != c_states).astype(int)
+        observed_changes += changes
+
+    return 1 / observed_changes # Assumes both characters are present (1,0)
+
+
+##
+
+
+def RI(tree):
+    """
+    Calculate the Consistency Index (CI) of tree characters.
+    """
+    tree.reconstruct_ancestral_characters()
+    observed_changes = np.zeros(tree.n_character)
+    for parent, child in tree.depth_first_traverse_edges():
+        p_states = np.array(tree.get_character_states(parent))
+        c_states = np.array(tree.get_character_states(child))
+        changes = (p_states != c_states).astype(int)
+        observed_changes += changes
+
+    # Calculate the maximum number of changes (G)
+    max_changes = len(tree.nodes)-1  # If every node had a unique state
+
+    return (max_changes-observed_changes) / (max_changes-1)
+
+
+##
+
+
+def _compatibility_metric(x, y):
+    """
+    Custom metric to calculate the compatibility between two characters.
+    Returns the fraction of compatible leaf pairs.
+    """
+    return np.sum((x == x[:, None]) == (y == y[:, None])) / len(x) ** 2
+
+##
+
+
+def char_compatibility(tree):
+    """
+    Compute a matrix of pairwise-compatibility scores between characters.
+    """
+    return pairwise_distances(tree.character_matrix.T, metric=lambda x, y: _compatibility_metric(x, y))
+
+
+##

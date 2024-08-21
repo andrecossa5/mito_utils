@@ -191,6 +191,8 @@ def traverse_and_extract_flat(base_dir, file_name='annotated_tree.pickle'):
                         data = pickle.load(f)
                 elif file_name.endswith('.csv'):
                     data = pd.read_csv(full_path, index_col=0)
+                elif file_name.endswith('.txt.gz'):
+                    data = pd.read_csv(full_path, index_col=0, header=None)
                 else:
                     raise ValueError(f"Unsupported file type: {file_name}")
 

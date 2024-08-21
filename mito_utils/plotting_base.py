@@ -106,11 +106,12 @@ def add_legend(label=None, colors=None, ax=None, loc='center', artists_size=7, l
     title = label if label is not None else None
 
     handles = create_handles(colors.keys(), colors=colors.values(), size=artists_size)
-    ax.legend(
+    legend = ax.legend(
         handles, colors.keys(), frameon=False, loc=loc, fontsize=ticks_size, 
         title_fontsize=label_size, ncol=ncols, title=title, 
         bbox_to_anchor=bbox_to_anchor
     )
+    ax.add_artist(legend)
 
 
 ##
@@ -412,24 +413,24 @@ def strip(df, x, y, by=None, c=None, a=1, l=None, s=5, ax=None, with_stats=False
     np.random.seed(123)
     
     if isinstance(c, str):
-        ax = sns.stripplot(data=df, x=x, y=y, color=c, ax=ax, size=s, order=order) 
+        ax = sns.stripplot(data=df, x=x, y=y, color=c, ax=ax, size=s, alpha=a, order=order, edgecolor='k')
         ax.set(xlabel='')
     
     elif isinstance(c, str) and by is not None:
-        g = sns.stripplot(data=df, x=x, y=y, hue=by, palette=c, ax=ax, order=order)
+        g = sns.stripplot(data=df, x=x, y=y, hue=by, palette=c, ax=ax, order=order, alpha=a, edgecolor='k')
         g.legend_.remove()
 
     elif isinstance(c, dict) and by is None:
         if all([ True if k in df[x].unique() else False for k in c.keys() ]):
             palette = [c[category] for category in order]
-            ax = sns.stripplot(data=df, x=x, y=y, palette=palette, ax=ax, size=s, order=order)
+            ax = sns.stripplot(data=df, x=x, y=y, palette=palette, ax=ax, size=s, order=order, alpha=a, edgecolor='k')
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
             
     elif isinstance(c, dict) and by is not None:
         if all([ True if k in df[by].unique() else False for k in c.keys() ]):
-            ax = sns.stripplot(data=df, x=x, y=y, palette=c.values(), hue=by, ax=ax, size=s, order=order)
+            ax = sns.stripplot(data=df, x=x, y=y, palette=c.values(), hue=by, ax=ax, size=s, order=order, alpha=a, edgecolor='k')
             ax.legend([], [], frameon=False)
             ax.set(xlabel='')    
         else:
@@ -487,23 +488,26 @@ def violin(df, x, y, by=None, c=None, a=1, l=None, ax=None, with_stats=False, or
 
 def plot_heatmap(df, palette='mako', ax=None, title=None, x_names=True, y_names=True, 
     x_names_size=7, y_names_size=7, xlabel=None, ylabel=None, annot=False, annot_size=5, 
-    label=None, shrink=1.0, cb=True, vmin=None, vmax=None, rank_diagonal=False):
+    label=None, shrink=1.0, cb=True, vmin=None, vmax=None, rank_diagonal=False, 
+    outside_linewidth=1, linewidths=0.2, linecolor='black'):
     """
     Simple heatmap.
     """
     if rank_diagonal:
         row_order = np.sum(df>0, axis=1).sort_values()[::-1].index
         col_order = df.mean(axis=0).sort_values()[::-1].index
-        df = df.loc[row_order, col_order]
-        
+        df = df.loc[row_order, col_order]    
     ax = sns.heatmap(data=df, ax=ax, robust=True, cmap=palette, annot=annot, xticklabels=x_names, 
         yticklabels=y_names, fmt='.2f', annot_kws={'size':annot_size}, cbar=cb,
         cbar_kws={'fraction':0.05, 'aspect':35, 'pad': 0.02, 'shrink':shrink, 'label':label},
-        vmin=vmin, vmax=vmax
+        vmin=vmin, vmax=vmax, linewidths=linewidths, linecolor=linecolor
     )
     ax.set(title=title, xlabel=xlabel, ylabel=ylabel)
     ax.set_xticklabels(ax.get_xticklabels(), fontsize=x_names_size)
     ax.set_yticklabels(ax.get_yticklabels(), fontsize=y_names_size)
+    for _, spine in ax.spines.items():
+        spine.set_visible(True)
+        spine.set_linewidth(outside_linewidth)
 
     return ax
 

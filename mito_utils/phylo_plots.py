@@ -12,7 +12,7 @@ from mito_utils.plotting_base import *
 ##
 
 
-_categorical_cmaps = ['tab10', 'set1', 'dark']
+_categorical_cmaps = [ten_godisnot, 'tab10', 'set1', 'dark']
 _continuous_cmaps = ['mako', 'viridis', 'inferno', 'magma']
 
 
@@ -64,7 +64,7 @@ def _place_tree_and_annotations(
     extend_branches=True, 
     angled_branches=True, 
     add_root=True, 
-    continuous_cmaps=None, 
+    continuous_cmap=None, 
     categorical_cmaps=None, 
     vmin_annot=None, vmax_annot=None, 
     colorstrip_width=None, 
@@ -97,7 +97,6 @@ def _place_tree_and_annotations(
     meta = meta or []
     
     n_cat = 0
-    n_cont = 0
 
     for feat in meta:
 
@@ -108,13 +107,8 @@ def _place_tree_and_annotations(
 
         if pd.api.types.is_numeric_dtype(x):
 
-            if continuous_cmaps is None:
-                continuous_cmap = _continuous_cmaps[n_cont]
-            else:
-                if feat in continuous_cmaps:
-                    continuous_cmap = continuous_cmaps[feat]
-                else:
-                    raise KeyError(f'{feat} not present in meta. Adjust continuos_cmaps and meta params...')
+            if continuous_cmap is None:
+                continuous_cmap = _continuous_cmaps[0]
                 
             colorstrip, anchor_coords = create_continuous_colorstrip(
                 x.to_dict(), 
@@ -128,8 +122,6 @@ def _place_tree_and_annotations(
                 vmax_annot
             )
 
-            n_cont += 1
-
         elif pd.api.types.is_string_dtype(x):
 
             if categorical_cmaps is None:
@@ -142,7 +134,14 @@ def _place_tree_and_annotations(
                         categorical_cmap = categorical_cmaps[feat]
                     else:
                         raise ValueError(f'Adjust categorical_cmaps. {feat} : categorical_cmaps is nor a str, a list or a dict...')
-                    assert all([ cat in categorical_cmap.keys() for cat in x.unique() ])
+                    if not all([ cat in categorical_cmap.keys() for cat in x.unique() ]):
+                        cats = x.unique()
+                        print(cats)
+                        missing_cats = cats[[ cat not in categorical_cmap.keys() for cat in cats ]]
+                        print(f'Missing cats in cmap for meta feat {feat}: {missing_cats}. Adding new colors...')
+                        for i,missing in enumerate(missing_cats):
+                            categorical_cmap[missing] = _categorical_cmaps[0][i]
+                        assert(all([ cat in categorical_cmap.keys() for cat in x.unique() ]))
                 else:
                     raise KeyError(f'{feat} not present in meta. Adjust categorical_cmaps and meta params...')
 
@@ -216,15 +215,15 @@ def _set_colors(d, meta=None, cov=None, cmap=None, kwargs=None, vmin=None, vmax=
 def plot_tree(
     tree, ax=None, depth_key=None, orient=90, extend_branches=True, angled_branches=True,
     add_root=False, meta=None, categorical_cmaps=None,
-    continuous_cmaps='mako', vmin_annot=.01, vmax_annot=.1,
+    continuous_cmap='mako', vmin_annot=.01, vmax_annot=.1,
     colorstrip_spacing=.05, colorstrip_width=1, 
     meta_branches=None, cov_branches=None, cmap_branches='Spectral_r',
     cov_leaves=None, cmap_leaves='tab20', 
     meta_internal_nodes=None, cov_internal_nodes=None, cmap_internal_nodes='Spectral_r',
-    leaves_labels=False, internal_node_labels=False,
-    internal_node_vmin=.2, internal_node_vmax=.8, 
-    internal_node_label_size=7, leaf_label_size=5, branch_kwargs={}, 
-    colorstrip_kwargs={}, leaf_kwargs={}, internal_node_kwargs={}, 
+    internal_node_labels=False, internal_node_subset=None,
+    internal_node_vmin=.2, internal_node_vmax=.8, internal_node_label_size=7, 
+    leaves_labels=False, leaf_label_size=5, 
+    colorstrip_kwargs={}, leaf_kwargs={}, internal_node_kwargs={}, branch_kwargs={}, 
     x_space=1.5
     ):
     """
@@ -249,7 +248,7 @@ def plot_tree(
         extend_branches=extend_branches, 
         angled_branches=angled_branches, 
         add_root=add_root, 
-        continuous_cmaps=continuous_cmaps, 
+        continuous_cmap=continuous_cmap, 
         categorical_cmaps=categorical_cmaps, 
         vmin_annot=vmin_annot, 
         vmax_annot=vmax_annot, 
@@ -324,11 +323,21 @@ def plot_tree(
         node : node_coords[node] for node in node_coords \
         if tree.is_internal_node(node) and node != 'root'
     }
-    colors = _set_colors(
-        internal_nodes, meta=meta_internal_nodes, cov=cov_internal_nodes, 
-        cmap=cmap_internal_nodes, kwargs=_internal_node_kwargs,
-        vmin=internal_node_vmin, vmax=internal_node_vmax
-    )
+
+    # Subset nodes if necessary
+    if internal_node_subset is not None:
+        internal_node_subset = [ x for x in internal_node_subset if x in tree.internal_nodes ]
+        internal_nodes = { node : internal_nodes[node] for node in internal_nodes if node in internal_node_subset }
+
+    # Here we go
+    if cov_internal_nodes is not None:
+        s = pd.Series({ node : tree.get_attribute(node, cov_internal_nodes) for node in tree.internal_nodes })
+        s.loc[lambda x: x.isna()] = 0 # Set missing values to 0
+        colors = _set_colors(
+            internal_nodes, meta=s.to_frame(cov_internal_nodes), cov=cov_internal_nodes, 
+            cmap=cmap_internal_nodes, kwargs=_internal_node_kwargs,
+            vmin=internal_node_vmin, vmax=internal_node_vmax
+        )
     for node in internal_nodes:
         _dict = _internal_node_kwargs.copy()
         x = internal_nodes[node][0]
@@ -337,6 +346,7 @@ def plot_tree(
         s = _internal_node_kwargs['markersize'] if node in colors else 0
         _dict.update({'c':c, 'markersize':s})
         ax.plot(x, y, **_dict)
+
         if internal_node_labels:
             if node in colors:
                 v = meta_internal_nodes.loc[node, cov_internal_nodes]
