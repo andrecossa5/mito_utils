@@ -1,42 +1,40 @@
+name: MI_TO
 channels:
   - conda-forge
   - bioconda
   - defaults
 dependencies:
-  - cxx-compiler
-  - fortran-compiler
-  - cython
-  - openblas
-  - conda-build
-  - leidenalg
-  - matplotlib
-  - networkx
-  - numba
-  - numpy
-  - python=3.10
-  - scanpy=1.9.7
-  - scikit-learn
-  - scipy
-  - seaborn
-  - statsmodels
-  - umap-learn
-  - cmake
-  - lightgbm
+  - anndata=0.8.0
+  - jax=0.3.16
+  - jaxlib=0.3.15
+  - joblib=1.2.0
+  - leidenalg=0.8.10
+  - lightgbm=3.3.3
+  - matplotlib=3.5.3
+  - numba=0.55.2
+  - numpy=1.22.4
+  - pynndescent=0.5.7
+  - python=3.10.6
   - pip
-  - python-annoy
-  - ipykernel
-  - pigz
+  - conda-build
+  - scanpy=1.9.1
+  - scikit-image=0.19.3
+  - scikit-learn=1.1.2
+  - scipy=1.9.0
+  - yaml=0.2.5
   - pip:
-    - pandas
-    - python-igraph
-    - statannotations
-    - git+https://github.com/single-cell-genetics/MQuad
-    - textalloc
-    - zarr==2.14.2 
-    - fbpca
-    - pysam
-    - shap
-    - dnaio
-    - git+https://github.com/YosefLab/Cassiopeia@master#egg=cassiopeia-lineage
-    - plotting_utils
-    - circlify
+      - bbmix==0.2.1
+      - biopython==1.76
+      - cython==0.29.32
+      - ete3==3.1.2
+      - gseapy==1.1.3
+      - igraph==0.9.11
+      - louvain==0.7.1
+      - pandas==1.5.3
+      - plotting-utils==0.1.2
+      - pysam==0.20.0
+      - python-igraph==0.9.11
+      - shap==0.41.0
+      - pyro-ppl
+      - umap-learn==0.5.6
+      - circlify
