@@ -6,11 +6,14 @@ import numpy as np
 import pandas as pd
 import sklearn.preprocessing as pp
 from itertools import product
+from scipy.spatial.distance import jaccard
 from sklearn.metrics import pairwise_distances, recall_score, precision_score, auc
 from sklearn.metrics.pairwise import PAIRWISE_BOOLEAN_FUNCTIONS
 from joblib import Parallel, delayed, parallel_backend, cpu_count
 from anndata import AnnData
 from .utils import rescale
+from .preprocessing import get_AD_DP
+from .genotyping import genotype_MI_TO
 
 
 ##
@@ -95,35 +98,53 @@ def prep_X_cov(a):
     
     return X, cov
 
-    
+
 ##
 
 
+def _custom_MI_TO_jaccard(x,y):
+    mask = (x!=-1) & (y!=-1)
+    return jaccard(x[mask], y[mask])
 
-def pair_d(data, metric='jaccard', t=.01, weights=None, scale=False, ncores=8, metric_kwargs={}):
+
+##
+
+
+def pair_d(
+    data, metric='custom_MI_TO_jaccard', bin_method='MI_TO', t=.05, weights=None, scale=False, ncores=8, 
+    metric_kwargs={}, discretization_kwargs={}):
     """
     Function for calculating (possibly weighted) pairwise distances among cells 
     """
-    print(f'pair_d arguments: metric={metric}, t={t:.2f}, ncores={ncores}.')
+    print(f'pair_d arguments: metric={metric}, ncores={ncores}.')
     
     if metric == 'ludwig2019':
         if isinstance(data, AnnData):
-            X, cov = prep_X_cov(a)
+            X, cov = prep_X_cov(data)
             D = ludwig_distances(X, cov, n_jobs=ncores, **metric_kwargs)
         else:
             raise TypeError('data must be of type AnnData to use metric ludwig2019.')
     else:
-        if isinstance(data, AnnData):
-            X = data.X
+        if metric in PAIRWISE_BOOLEAN_FUNCTIONS + ['custom_MI_TO_jaccard']:
+            if bin_method == 'MI_TO':
+                if isinstance(data, AnnData):
+                    X = genotype_MI_TO(data, **discretization_kwargs)
+                else:
+                    raise TypeError('data must be of type AnnData to use MI_TO discretization.')
+            else:
+                X = data.X if isinstance(data, AnnData) else X
+                X = np.where(X>=t, 1, 0)
         else:
-            X = data
-        if metric in PAIRWISE_BOOLEAN_FUNCTIONS:
-            X = np.where(X>=t,1,0)
+            X = data.X if isinstance(data, AnnData) else X
+
         if weights is not None:
             weights = np.array(weights)
             X = X * weights
         if scale:
             X = pp.scale(X)
+        if metric == 'custom_MI_TO_jaccard':
+            metric = _custom_MI_TO_jaccard
+
         D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False)
 
     return D

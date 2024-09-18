@@ -86,10 +86,6 @@ def read_one_sample(path_data, sample='MDA_clones', cell_file='barcodes.txt', on
         with_GBC=with_GBC
     )
     afm.obs = afm.obs.assign(sample=sample)
-    
-    # if with_GBC:
-    #     afm.obs['GBC'] = afm.obs['GBC_Set']
-    #     afm.obs = afm.obs.drop(columns=['GBC_Set'])
 
     return afm
 

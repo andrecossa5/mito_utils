@@ -3,6 +3,7 @@ Utils for phylogenetic inference.
 """
 
 import cassiopeia as cs
+from scipy.stats import nbinom
 from cassiopeia.plotting.local import *
 from scipy.sparse import issparse
 from plotting_utils._utils import *
@@ -34,61 +35,6 @@ solver_kwargs_d = {
     'max_cut' : {}
 
 }
-
-
-##
-
-
-def extract_phylodata(a=None, phy=None, t=.01, metric='hamming', ncores=8, from_phy=False,
-                      with_alleles_tables=False):
-    """
-    Extract data structures necessary for tree building.
-    """
-
-    if from_phy:
-
-        species = []
-        seqs = []
-        for i in range(phy.shape[0]):
-            L = phy.iloc[i,:].values[0].split(' ')
-            species.append(L[0])
-            seqs.append(np.array(list(L[-1]))) 
-
-        # Prep M, D
-        M = pd.DataFrame(
-            data=seqs, index=species, columns=[f'char{_}' for _ in range(seqs[0].size)]
-        )
-        for j in range(M.shape[1]):
-            counts = M.iloc[:,j].value_counts()
-            d_ = { char:num for char,num in zip(counts.index, range(counts.shape[0]))}
-            M.iloc[:,j] = M.iloc[:,j].map(d_)
-
-        D = pd.DataFrame(pairwise_distances(M.values, metric=metric), 
-                        index=species, columns=species)
-        meta = pd.DataFrame(index=species)
-        variants = M.columns
-
-        return M, D, meta, variants
-
-    else:
-
-        # Remove zeros and get AD, DP
-        a = nans_as_zeros(a)
-        cells = a.obs_names
-        variants = a.var_names
-        meta = a.obs
-
-        # Prep M, D
-        M = pd.DataFrame(np.where(a.X>=t, 1, 0), index=cells, columns=variants)
-        D = pd.DataFrame(pair_d(a.X, ncores=ncores, metric=metric), index=cells, columns=cells)
-        D[np.isnan(D)] = 0
-
-        if with_alleles_tables:
-            AD, DP, _ = get_AD_DP(a)
-            return M, D, meta, variants, AD, DP
-
-        else:
-            return M, D, meta, variants
 
 
 ##
@@ -192,9 +138,9 @@ def jackknife_allele_tables(ad=None, dp=None, M=None):
 
 
 def build_tree(
-        a=None, M=None, D=None, meta=None, 
-        metric='jaccard', t=.01, weights=None, solver='UPMGA', 
-        ncores=8, metric_kwargs={}, solver_kwargs={}
+    a=None, M=None, D=None, meta=None, bin_method='nb',
+    metric='jaccard', t=.01, weights=None, solver='UPMGA', 
+    ncores=8, metric_kwargs={}, solver_kwargs={}
     ):
     """
     Wrapper for tree building with Cassiopeia solvers.
@@ -214,8 +160,12 @@ def build_tree(
         pass
     elif a is not None:
         meta = a.obs
-        M = pd.DataFrame(np.where(a.X>=t, 1, 0), index=a.obs_names, columns=a.var_names)
-        D = pair_d(a, metric=metric, t=t, weights=weights, ncores=ncores, metric_kwargs=metric_kwargs)
+        if bin_method == 'nb':
+            X_bin = binarize_nb(a)
+        else:
+            X_bin = np.where(a.X>=t, 1, 0)
+        M = pd.DataFrame(X_bin, index=a.obs_names, columns=a.var_names)
+        D = pair_d(a, metric=metric, t=t, weights=weights, ncores=ncores, bin_method=bin_method, metric_kwargs=metric_kwargs)
         D[np.isnan(D)] = 0
         D = pd.DataFrame(D, index=a.obs_names, columns=a.obs_names)
     else:
@@ -666,7 +616,7 @@ def char_compatibility(tree):
     """
     Compute a matrix of pairwise-compatibility scores between characters.
     """
-    return pairwise_distances(tree.character_matrix.T, metric=lambda x, y: _compatibility_metric(x, y))
+    return pairwise_distances(tree.character_matrix.T, metric=lambda x, y: _compatibility_metric(x, y), force_all_finite=False)
 
 
 ##

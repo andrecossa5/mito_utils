@@ -197,7 +197,7 @@ def vars_n_positive_dist(afm, ax=None, color='k', title=None, xlim=(-10,100)):
 #
 
 
-def vars_AF_dist(afm, ax=None, color='b', title=None):
+def vars_AF_dist(afm, ax=None, color='b', title=None, **kwargs):
     """
     Ranked AF distributions (VG-like).
     """
@@ -207,7 +207,7 @@ def vars_AF_dist(afm, ax=None, color='b', title=None):
     for i in range(to_plot.shape[1]):
         x = to_plot[:, i]
         x = np.sort(x)
-        ax.plot(x, '-', color=color, linewidth=0.5)
+        ax.plot(x, '-', color=color, **kwargs)
 
     if title is None:
         t = 'Ranked AF distributions, per variant'
