@@ -132,7 +132,10 @@ def pair_d(
                 else:
                     raise TypeError('data must be of type AnnData to use MI_TO discretization.')
             else:
-                X = data.X if isinstance(data, AnnData) else X
+                if isinstance(data, AnnData):
+                    X = data.X 
+                else:
+                    X = X
                 X = np.where(X>=t, 1, 0)
         else:
             X = data.X if isinstance(data, AnnData) else X
@@ -155,15 +158,11 @@ def pair_d(
 
 def evaluate_metric_with_gt(a, metric, labels, **kwargs):
     
-    print(f'Computing distances with metric {metric}...')
-    
     final = {}
     D = pair_d(a, metric=metric, **kwargs)
 
     for alpha in np.linspace(0,1,10):
-        
-        print(f'Computing together/separate cell pairs: alpha {alpha:.2f}...')
-
+ 
         p_list = []
         gt_list = []
 

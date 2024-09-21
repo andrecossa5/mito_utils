@@ -5,65 +5,10 @@ Module to make_afm: create a clean allelic frequency matrix.
 from itertools import product
 import gc
 import re
-import logging
 import numpy as np
 import pandas as pd
-import scanpy as sc
 import anndata
 from mquad.mquad import *
-from scipy.sparse import csr_matrix
-
-
-##
-
-
-def mask_layer(A, base='C', strand='fw', layer='counts', min_qual=30):
-    """
-    Clean (base-specific, stranded) UMI counts.
-    Set adata layer entries (i.e., cells x sites stranded allele consensus UMI counts) to 0,
-    if the corresponding (average, across all consensus UMIs) base calling quality is <30.
-    """
-    logging.info(f'Filtering counts for {base} base and {strand} strand...')
-    
-    X = A.layers[f'{base}_{layer}_{strand}'].A
-    mask = A.layers[f'{base}_qual_{strand}'].A < min_qual
-
-    if layer == 'counts':
-        i_counts = X.sum()
-    i_entries = (X>0).sum()
-
-    X[mask] = 0
-    assert np.all((X==0) == mask)
-
-    if layer == 'counts':
-        o_counts = X.sum()
-        logging.info(f'Retaining {o_counts/i_counts*100:.2f}% (consensus) UMI counts')    
-    o_entries = (X>0).sum()
-
-    logging.info(f'Retaining {o_entries/i_entries*100:.2f}% entries')
-
-    return X, mask
-
-
-##
-
-
-def clean_BC_quality(A):
-    """
-    Clean A.layers cell x site x allele UMI counts, qualities and coverage.
-    """
-    cleaned_coverage = np.zeros(A.shape)
-    combos = list(product(['A', 'C', 'T', 'G'], ['fw', 'rev']))
-    for base, strand in combos:
-        X, mask = mask_layer(A, base=base, strand=strand, layer='counts')
-        qual = A.layers[f'{base}_qual_{strand}'].A
-        qual[mask] = 0 
-        A.layers[f'{base}_counts_{strand}'] = csr_matrix(X)         # Cleaned counts
-        A.layers[f'{base}_qual_{strand}'] = csr_matrix(qual)        # Cleaned qualities
-        cleaned_coverage += X
-    A.layers['cov'] = csr_matrix(cleaned_coverage)                  # Cleaned cell x site coverage
-
-    return A
 
 
 ##
@@ -106,15 +51,14 @@ def create_one_base_tables(A, base, only_variants=True):
 ##
 
 
-def format_matrix(A, cbc_gbc_df=None, with_GBC=True, only_variants=True):
+def format_matrix(A, only_variants=True):
     """
-    Create a full cell x variant AFM from the original maegatk output. 
-    Add lentiviral clones' labels to resulting .obs if necessary.
+    Create a full cell x variant AFM from the original AnnData storing all dataset tables.
     """
-
-    # Add labels to .obs
-    if with_GBC and cbc_gbc_df is not None:
-        A.obs['GBC'] = pd.Categorical(cbc_gbc_df['GBC'])
+    
+    # Clones to categorical, if present
+    if 'GBC' in A.obs.columns:
+        A.obs['GBC'] = pd.Categorical(A.obs['GBC'])
 
     # For each position and cell, compute each base AF and quality tables
     A_cov, A_x, A_qual = create_one_base_tables(A, 'A', only_variants=only_variants)
@@ -145,7 +89,7 @@ def format_matrix(A, cbc_gbc_df=None, with_GBC=True, only_variants=True):
     quality = np.round(quality / (n_times + 0.0000001))
 
     # Create AnnData with variants and sites matrices
-    afm = anndata.AnnData(X=X, obs=A.obs)
+    afm = anndata.AnnData(X=X, obs=A.obs, dtype=np.float32)
     afm.layers['coverage'] = cov
     afm.layers['quality'] = qual
 

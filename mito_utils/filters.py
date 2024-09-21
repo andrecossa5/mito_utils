@@ -118,7 +118,7 @@ def filter_cells_with_at_least_one(a, t=.05):
 ##
 
 
-def filter_cell_clones(afm, min_cell_number=10):
+def filter_cell_clones(afm, cat_label='GBC', min_cell_number=10):
     """
     Filter only cells from clones (i.e., GBC column in afm.obs) with at least
     min_cell_number cells.
@@ -126,15 +126,15 @@ def filter_cell_clones(afm, min_cell_number=10):
     print(f'Filtering cells from clones with >={min_cell_number} cells')
     
     n0 = afm.shape[0]
-    cell_counts = afm.obs.groupby('GBC').size()
+    cell_counts = afm.obs.groupby(cat_label).size()
     clones_to_retain = cell_counts[cell_counts>=min_cell_number].index 
-    test = afm.obs['GBC'].isin(clones_to_retain)
+    test = afm.obs[cat_label].isin(clones_to_retain)
     afm.uns['per_position_coverage'] = afm.uns['per_position_coverage'].loc[test, :]
     afm.uns['per_position_quality'] = afm.uns['per_position_quality'].loc[test, :]
     afm = afm[test, :].copy()
 
     print(f'Removed other {n0-afm.shape[0]} cells')
-    print(f'Retaining {afm.obs["GBC"].unique().size} clones for the analysis.')
+    print(f'Retaining {afm.obs[cat_label].unique().size} discrete categories (i.e., {cat_label}) for the analysis.')
           
     return afm
 
@@ -242,13 +242,13 @@ def filter_CV(afm, n_top=1000):
 ##
 
 
-def filter_ludwig2019(afm, mean_af=0.5, mean_qual=20):
+def filter_ludwig2019(afm, mean_af=0.5, min_var_quality=20):
     """
     Filter variants based on fixed tresholds adopted in Ludwig et al., 2019, 
     in the experiment without ATAC-seq reference, Fig.7.
     """
-    test_vars_het = np.mean(afm.X, axis=0) >= mean_af                        # high average AF variants
-    test_vars_qual = np.mean(afm.layers['quality'], axis=0) >= mean_qual     # high average quality variants
+    test_vars_het = np.mean(afm.X, axis=0) >= mean_af                               # high average AF variants
+    test_vars_qual = np.mean(afm.layers['quality'], axis=0) >= min_var_quality      # high average quality variants
     test_vars = test_vars_het & test_vars_qual
     filtered = afm[:, test_vars].copy()
     filtered = filter_sites(filtered)
@@ -259,21 +259,21 @@ def filter_ludwig2019(afm, mean_af=0.5, mean_qual=20):
 ##
 
 
-def filter_miller2022(afm, mean_cov=100, mean_qual=20, 
+def filter_miller2022(afm, min_site_cov=100, min_var_quality=20, 
     perc_1=0.01, perc_99=0.1): 
     """
     Filter variants based on adaptive adopted in Miller et al., 2022.
     """
     # Site covered by at least (median) 10 UMIs
     test_sites = pd.Series(
-       np.mean(afm.uns['per_position_coverage'], axis=0) >= mean_cov,
+       np.mean(afm.uns['per_position_coverage'], axis=0) >= min_site_cov,
         index=afm.uns['per_position_coverage'].columns
     )
     sites = test_sites[test_sites].index
     test_vars_site_coverage = afm.var_names.map(lambda x: x.split('_')[0] in sites).to_numpy(dtype=bool)
 
     # Avg quality and percentile heteroplasmy tests
-    test_vars_qual = np.nanmean(afm.layers['quality'], axis=0) >= mean_qual
+    test_vars_qual = np.nanmean(afm.layers['quality'], axis=0) >= min_var_quality
     test_vars_het = (np.percentile(afm.X, q=1, axis=0) < perc_1) & (np.percentile(afm.X, q=99, axis=0) > perc_99)
     test_vars = test_vars_site_coverage & test_vars_qual & test_vars_het
     candidate_vars = afm.var_names[test_vars]
@@ -858,10 +858,8 @@ def filter_GT_stringent(afm, lineage_column=None, min_clone_perc=.75, max_perc_r
     ground truth clones, filter cells and vars.
     """
 
-    if lineage_column is not None and lineage_column in afm.obs.columns:
-        pass
-    else:
-        raise ValueError(f'{lineage_column} is not available in afm.obs!')
+    if lineage_column not in a.obs.columns:
+        raise ValueError(f'{lineage_column} not present in cell metadata!')
     
     gt_l = [
         rank_clone_variants(
@@ -895,7 +893,7 @@ def filter_GT_stringent(afm, lineage_column=None, min_clone_perc=.75, max_perc_r
     filtered = afm[cells, vois].copy()
     filtered = filter_sites(filtered) 
 
-    return filtered, clones_df
+    return filtered
 
 
 ##
@@ -906,6 +904,9 @@ def compute_lineage_biases(a, lineage_column, target_lineage, t=.01):
     Compute -log10(FDR) Fisher's exact test: lineage biases of some mutation.
     """
 
+    if lineage_column not in a.obs.columns:
+        raise ValueError(f'{lineage_column} not present in cell metadata!')
+        
     n = a.shape[0]
     muts = a.var_names
 
@@ -991,7 +992,7 @@ def filter_GT_enriched(afm, lineage_column='GBC', t=.05, fdr_treshold=.1, n_enri
     filtered = afm[cells, vois].copy()
     filtered = filter_sites(filtered) 
 
-    return filtered, clones_df 
+    return filtered 
 
 
 ##

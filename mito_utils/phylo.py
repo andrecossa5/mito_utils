@@ -138,7 +138,7 @@ def jackknife_allele_tables(ad=None, dp=None, M=None):
 
 
 def build_tree(
-    a=None, M=None, D=None, meta=None, bin_method='nb',
+    a=None, M=None, D=None, meta=None, bin_method='vanilla',
     metric='jaccard', t=.01, weights=None, solver='UPMGA', 
     ncores=8, metric_kwargs={}, solver_kwargs={}
     ):
@@ -161,7 +161,8 @@ def build_tree(
     elif a is not None:
         meta = a.obs
         if bin_method == 'nb':
-            X_bin = binarize_nb(a)
+            raise ValueError('Not implemented')
+            # X_bin = binarize_nb(a)
         else:
             X_bin = np.where(a.X>=t, 1, 0)
         M = pd.DataFrame(X_bin, index=a.obs_names, columns=a.var_names)
