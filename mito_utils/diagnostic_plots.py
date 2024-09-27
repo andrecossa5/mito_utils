@@ -167,7 +167,6 @@ def mean_position_quality_dist(afm, ax=None, color='k', title=None):
 ##
 
 
-# Variant level diagnostics
 def vars_n_positive_dist(afm, ax=None, color='k', title=None, xlim=(-10,100)):
     """
     Percentage of positive cells per variant, distribution.
@@ -221,94 +220,42 @@ def vars_AF_dist(afm, ax=None, color='b', title=None, **kwargs):
 ##
 
 
-def strand_concordances(orig, variants):
+def mut_profile(a, ref_df, figsize=(6,3)):
     """
-    Utils for strand concordances calculation.
+    MutationProfile_bulk (Weng et al., 2024).
     """
-    strand_conc = {}
-    for base in ['A', 'C', 'T', 'G']:
-        fw = orig.layers[f'{base}_counts_fw'].toarray()
-        rev = orig.layers[f'{base}_counts_rev'].toarray()
-        corr = []
-        for i in range(fw.shape[1]):
-            x = fw[:, i]
-            y = rev[:, i]
-            corr.append(np.corrcoef(x, y)[0,1])
-        corr = np.array(corr)
-        corr[np.isnan(corr)] = 0
-        strand_conc[base] = corr
+    called_variants = a.var_names.map(lambda x: ''.join(x.split('_')))
+    ref_df['called'] = ref_df['variant'].isin(called_variants)
+    total = len(ref_df)
+    total_called = ref_df['called'].sum()
 
-    strand_conc = pd.DataFrame(
-        strand_conc).reset_index().rename(
-        columns={'index':'MT_site'}).melt(
-        id_vars='MT_site', var_name='base', value_name='corr'
-    )
-    strand_conc['MT_site'] = strand_conc['MT_site'].astype(str)
-    strand_conc['var'] = strand_conc.loc[:, ['MT_site', 'base']].apply('_'.join, axis=1)
-    strand_conc = strand_conc.drop(['MT_site', 'base'], axis=1).set_index('var')
-    strand_conc = strand_conc.loc[variants, :]
+    grouped = ref_df.groupby(['three_plot', 'group_change', 'strand'])
+    prop_df = grouped.agg(
+        observed_prop_called=('called', lambda x: x.sum() / total_called),
+        expected_prop=('variant', lambda x: x.count() / total),
+        n_obs=('called', 'sum'),
+        n_total=('variant', 'count')
+    ).reset_index()
 
-    return strand_conc
+    prop_df['fc_called'] = prop_df['observed_prop_called'] / prop_df['expected_prop']
+    prop_df = prop_df.set_index('three_plot')
+    prop_df['group_change'] = prop_df['group_change'].map(lambda x: '>'.join(list(x)))
 
 
-##
+    fig, axs = plt.subplots(1, prop_df['group_change'].unique().size, figsize=figsize, sharey=True, gridspec_kw={'wspace': 0.1},
+                            constrained_layout=True)
+    strand_palette = {'H': 'darkred', 'L': 'blue'}
 
+    for i,x in enumerate(prop_df['group_change'].unique()):
+        ax = axs.ravel()[i]
+        df_ = prop_df.query('group_change==@x')
+        bar(df_, 'n_obs', by='strand', c=strand_palette, ax=ax, s=1, a=.8, annot=False)
+        format_ax(ax, xticks=[], xlabel=x, ylabel='Substitution rate' if i==0 else '', title=f'n: {df_["n_obs"].sum()}')
 
-def vars_strand_conc_dist(orig, variants, ax=None, color='b', title=None):
-    """
-    Variant strand concordances distribution.
-    """
-    orig.layers['A_counts_fw'] = orig.X
+    add_legend(ax=axs.ravel()[0], colors=strand_palette, ncols=1, loc='upper left', bbox_to_anchor=(0,1), label='Strand', ticks_size=6)
+    fig.tight_layout()
 
-    # Calculation of strand concordances, at all {site}_{base} combo.
-    strand_conc = strand_concordances(orig, variants)
-
-    # Viz
-    hist(strand_conc, 'corr', n=sturges(strand_conc['corr']), ax=ax, c=color)
-
-    if title is None:
-        t = 'Strand concordances distribution'
-    else:
-        t = title
-    format_ax(ax=ax, title=t, xlabel="Pearson's r", ylabel='n variants') 
-
-    median = np.median(strand_conc['corr'])
-    r = (strand_conc['corr'].min(), strand_conc['corr'].max())
-    ax.text(0.6, 0.9, f'Median: {median:.2f}', transform=ax.transAxes)
-    ax.text(0.6, 0.85, f'Min-max: {r[0]:.2f}-{r[1]:.2f}', transform=ax.transAxes)
-
-    return ax
-
-
-##
-
-
-def AF_mean_strand_conc_corr(orig, variants, afm, ax=None, color='b', title=None):
-    """
-    Mean AF/strand concordance relationship.
-    """
-    strand_conc = strand_concordances(orig, variants)
-
-    df_ = strand_conc.assign(mean=np.nanmean(afm.X, axis=0))
-
-    scatter(df_, 'mean', 'corr', c=color, ax=ax)
-
-    if title is None:
-        t = 'AF mean-strand concordance trend, per variant'
-    else:
-        t = title
-    format_ax(ax=ax, title=t, xlabel='Mean', ylabel='pho')
-
-    test = df_['mean'] < 0.6
-    x = df_['mean'][test]
-    y = df_['corr'][test]
-    fitted_coefs = np.polyfit(x, y, 1)
-    y_hat = np.poly1d(fitted_coefs)(x)
-    ax.plot(x, y_hat, linestyle='--', color='black')
-    corr = np.corrcoef(x, y)[0,1]
-    ax.text(0.7, 0.9, f"Pearson's r: {corr:.2f}", transform=ax.transAxes)
-
-    return ax
+    return fig
 
 
 ##

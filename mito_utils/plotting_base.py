@@ -318,14 +318,15 @@ def hist(df, x, n=10, by=None, c='r', a=1, l=None, ax=None, density=False):
 
 
 def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None, 
-    edgecolor=None, annot_size=10):
+    edgecolor=None, annot_size=10, fmt=".2f", annot=True):
     """
     Basic bar plot.
     """
     if isinstance(c, str) and by is None:
         x = np.arange(df[y].size)
         ax.bar(x, df[y], align='center', width=s, alpha=a, color=c, edgecolor=edgecolor)
-        ax.bar_label(ax.containers[0], padding=0, size=annot_size)
+        if annot:   
+            ax.bar_label(ax.containers[i], padding=0, size=annot_size, fmt=fmt)
 
     elif by is not None and x is None and isinstance(c, dict):
         x = np.arange(df[y].size)
@@ -338,11 +339,12 @@ def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None,
                 height = df[y].values[idx]
                 ax.bar(x[idx], height, align='center', width=s, alpha=a, 
                     color=c[cat], edgecolor=edgecolor)
-                ax.bar_label(ax.containers[i], padding=0, size=annot_size)
+                if annot:   
+                    ax.bar_label(ax.containers[i], padding=0, size=annot_size, fmt=fmt)
 
     elif by is not None and x is not None and isinstance(c, dict):
         ax = sns.barplot(data=df, x=x, y=y, hue=by, ax=ax, width=s, 
-            palette=list(c.values()), alpha=a)
+            palette=list(c.values()), alpha=a, formatter='.2f')
         ax.legend([], [], frameon=False)
         ax.set(xlabel='', ylabel='')
         ax.set_xticklabels(np.arange(df[x].unique().size))

@@ -2,11 +2,11 @@
 Discretization module.
 """
 
+import numpy as np
 import scipy.stats as stats
 from scipy.optimize import minimize
 from scipy.special import logsumexp
 from bbmix.models import MixtureBinomial
-from mito_utils.preprocessing import *
 
 
 ##
@@ -155,14 +155,10 @@ def fit_mixbinom(ad, dp, logratio=False, BIC=True):
 ##
 
 
-def _genotype_mix(ad, dp, K=2, t_prob=.75, t_vanilla=.05, debug=False):
-    """
-    Derive a discrete genotype (1:'MUT', 0:'WT', -1:'undefined') for each cell, given the 
-    AD and DP counts of one of its candidate mitochondrial variants.
-    """
-
+def get_posteriors(ad, dp):
+    
     np.random.seed(1234)
-    model = MixtureBinomial(n_components=K, tor=1e-20)
+    model = MixtureBinomial(n_components=2, tor=1e-20)
     model.fit((ad, dp), max_iters=500, early_stop=True)
 
     # Access the estimated parameters
@@ -176,16 +172,30 @@ def _genotype_mix(ad, dp, K=2, t_prob=.75, t_vanilla=.05, debug=False):
     pi0 = pis[idx0]
     d = {'p':[p0,p1], 'pi':[pi0,pi1]}
 
-    # Genotype
-    log_likelihoods = np.zeros((ad.size, K))
-    for k in range(K):
+    # Get posterior probabilities
+    log_likelihoods = np.zeros((ad.size, 2))
+    for k in range(2):
         log_likelihoods[:,k] = model.log_likelihood_binomial(ad, dp, d['p'][k], d['pi'][k])
     log_weighted_likelihoods = log_likelihoods + np.log(d['pi'])
     log_likelihood_sums = logsumexp(log_weighted_likelihoods, axis=1, keepdims=True)
     log_posterior_probs = log_weighted_likelihoods - log_likelihood_sums
     posterior_probs = np.exp(log_posterior_probs)
+
+    return posterior_probs
+
+
+##
+
+
+def genotype_mix(ad, dp, t_prob=.75, t_vanilla=.05, debug=False, min_AD=2):
+    """
+    Derive a discrete genotype (1:'MUT', 0:'WT', -1:'undefined') for each cell, given the 
+    AD and DP counts of one of its candidate mitochondrial variants.
+    """
+
+    posterior_probs = get_posteriors(ad, dp)
     tests = [ 
-        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)), 
+        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)) & (ad>=min_AD), 
         (posterior_probs[:,1]<(1-t_prob)) & (posterior_probs[:,0]>t_prob) 
     ]
     geno_prob = np.select(tests, [1,0], default=-1)
@@ -204,24 +214,3 @@ def _genotype_mix(ad, dp, K=2, t_prob=.75, t_vanilla=.05, debug=False):
 
 
 ##
-
-
-def genotype_MI_TO(adata, t_prob=.75, t_vanilla=.05, debug=False):
-    """
-    Call genotypes using MI_TO binomial mixtures approach.
-    """
-    AD, DP, _ = get_AD_DP(adata)
-    AD = AD.A.T
-    DP = DP.A.T
-    G_prob = np.zeros(adata.shape)
-    for idx,_ in enumerate(adata.var_names):
-        G_prob[:,idx] = _genotype_mix(
-            AD[:,idx], DP[:,idx], t_prob=t_prob, t_vanilla=t_vanilla, debug=False
-        )
-    return G_prob
-
-
-##
-
-
-
