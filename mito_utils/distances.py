@@ -111,9 +111,9 @@ def _get_AD_DP(a, X, AD, DP):
 ##
 
 
-def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=.05, min_AD=2, debug=False):
+def genotype_mixtures(AD, DP, t_prob=.75, t_vanilla=.01, min_AD=2, debug=False):
     """
-    Single-cell MT-SNVs genotyping with binomial mixtures posterior probabilities thresholding (Kwock et al., 2022) 
+    Single-cell MT-SNVs genotyping with binomial mixtures posterior probabilities thresholding (Kwock et al., 2022).
     """
     X = np.zeros(AD.shape)
     for idx in range(AD.shape[1]):
@@ -124,7 +124,26 @@ def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=.05, min_AD=2, debug=False):
 ##
 
 
-def genotype_MI_TO_smooth(AD, DP, t_prob=.75, k=10, gamma=.25, n_samples=100, min_AD=2):
+def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=.01, min_AD=2, min_cell_prevalence=.05, debug=False):
+    """
+    Hybrid genotype calling strategy: if a mutation has prevalence (AD>=min_AD and AF>=t_vanilla) >= min_cell_prevalence,
+    use probabilistic modeling as in 'bin_mixtures'. Else, use simple tresholding as in 'vanilla' method.
+    """
+    X = np.zeros(AD.shape)
+    for idx in range(AD.shape[1]):
+        test = (AD[:,idx]/(AD[:,idx]+.0000001)>t_vanilla) & (AD[:,idx]>=min_AD)
+        prevalence = test.sum() / test.size
+        if prevalence >= min_cell_prevalence:
+            X[:,idx] = genotype_mix(AD[:,idx], DP[:,idx], t_prob=t_prob, t_vanilla=t_vanilla, min_AD=min_AD, debug=debug)
+        else:
+            X[:,idx] = np.where(test, 1, 0)
+    return X
+
+
+##
+
+
+def genotype_mixtures_smooth(AD, DP, t_prob=.75, k=10, gamma=.25, n_samples=100, min_AD=2):
     """
     Single-cell MT-SNVs genotyping with binomial mixtures posterior probabilities thresholding (readapted from  MQuad, Kwock et al., 2022)
     and kNN smoothing (readapted from Phylinsic, Liu et al., 2022).
@@ -177,7 +196,7 @@ def genotype_MI_TO_smooth(AD, DP, t_prob=.75, k=10, gamma=.25, n_samples=100, mi
 
 
 def call_genotypes(a=None, X=None, AD=None, DP=None, bin_method='vanilla', t_prob=.75, t_vanilla=.01,
-                   k=10, gamma=.25, n_samples=100, min_AD=1):
+                   k=10, gamma=.25, n_samples=100, min_AD=1, min_cell_prevalence=.1):
     """
     Call genotypes using simple thresholding or th MI_TO binomial mixtures approachm (w/i or w/o kNN smoothing).
     """
@@ -185,10 +204,12 @@ def call_genotypes(a=None, X=None, AD=None, DP=None, bin_method='vanilla', t_pro
 
     if bin_method == 'vanilla':
         X = np.where((AD/(DP+.0000001)>t_vanilla) & (AD>=min_AD),1,0)
+    elif bin_method == 'bin_mixtures':
+        X = genotype_mixtures(AD, DP, t_prob=t_prob, min_AD=min_AD)
+    elif bin_method == 'bin_mixtures_smooth':
+        X = genotype_mixtures_smooth(AD, DP, t_prob=t_prob, k=k, gamma=gamma, n_samples=n_samples, min_AD=min_AD)
     elif bin_method == 'MI_TO':
-        X = genotype_MI_TO(AD, DP, t_prob=t_prob, min_AD=min_AD)
-    elif bin_method == 'MI_TO_smooth':
-        X = genotype_MI_TO_smooth(AD, DP, t_prob=t_prob, k=k, gamma=gamma, n_samples=n_samples, min_AD=min_AD)
+        X = genotype_MI_TO(AD, DP, t_prob=t_prob, t_vanilla=t_vanilla, min_AD=min_AD, min_cell_prevalence=min_cell_prevalence)
 
     return X
 
@@ -224,7 +245,7 @@ def preprocess_feature_matrix(X=None, a=None, AD=None, DP=None, metric='euclidea
     elif not binary and scale:
         X = pp.scale(X)
 
-    # Weight different features if necessary
+    # Weight differently features if necessary
     if weights is not None:
         weights = np.array(weights)
         X = X * weights if not binary else np.round(X * weights)

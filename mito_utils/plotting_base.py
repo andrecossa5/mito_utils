@@ -317,40 +317,50 @@ def hist(df, x, n=10, by=None, c='r', a=1, l=None, ax=None, density=False):
 ##
 
 
+
+
 def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None, 
-    edgecolor=None, annot_size=10, fmt=".2f", annot=True):
+        edgecolor=None, annot_size=10, fmt=".2f", annot=True):
     """
     Basic bar plot.
     """
+
     if isinstance(c, str) and by is None:
-        x = np.arange(df[y].size)
-        ax.bar(x, df[y], align='center', width=s, alpha=a, color=c, edgecolor=edgecolor)
-        if annot:   
-            ax.bar_label(ax.containers[i], padding=0, size=annot_size, fmt=fmt)
+        if x is None:
+            x = np.arange(df[y].size)
+        bars = ax.bar(x, df[y], align='center', width=s, alpha=a, color=c, edgecolor=edgecolor)
+        if annot:
+            ax.bar_label(bars, df[y].values, padding=0, fmt=fmt, fontsize=annot_size)
 
     elif by is not None and x is None and isinstance(c, dict):
         x = np.arange(df[y].size)
         categories = df[by].unique()
-        n_cat = len(categories)
-        if all([ cat in c for cat in categories ]):
-            for i, cat in enumerate(categories):
-                height = df[y].values
-                idx = [ i for i, x in enumerate(df[by]) if x == cat ]
-                height = df[y].values[idx]
-                ax.bar(x[idx], height, align='center', width=s, alpha=a, 
-                    color=c[cat], edgecolor=edgecolor)
-                if annot:   
-                    ax.bar_label(ax.containers[i], padding=0, size=annot_size, fmt=fmt)
+        if all([cat in c for cat in categories]):
+            for idx,cat in enumerate(categories):
+                idx = df[by] == cat
+                height = df.loc[idx, y].values
+                x_positions = x[idx]
+                bars = ax.bar(x_positions, height, align='center', width=s, alpha=a, color=c[cat], edgecolor=edgecolor)
+                if annot:
+                    ax.bar_label(bars, height, padding=0, fmt=fmt, fontsize=annot_size)
+        else:
+            raise ValueError(f'{by} categories do not match provided colors keys')
 
     elif by is not None and x is not None and isinstance(c, dict):
         ax = sns.barplot(data=df, x=x, y=y, hue=by, ax=ax, width=s, 
-            palette=list(c.values()), alpha=a, formatter='.2f')
+                         palette=c, alpha=a)
         ax.legend([], [], frameon=False)
         ax.set(xlabel='', ylabel='')
-        ax.set_xticklabels(np.arange(df[x].unique().size))
-
+        ax.set_xticklabels(np.arange(df[x].nunique()))
+        if annot:
+            for p in ax.patches:
+                height = p.get_height()
+                ax.annotate(f'{height:{fmt}}', 
+                            (p.get_x() + p.get_width() / 2., height),
+                            ha='center', va='bottom', 
+                            fontsize=annot_size)
     else:
-        raise ValueError(f'{by} categories do not match provided colors keys')
+        raise ValueError(f'Invalid combination of parameters.')
 
     return ax
 
