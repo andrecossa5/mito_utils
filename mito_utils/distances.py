@@ -5,7 +5,7 @@ Module to create custom distance function among cell AF profiles.
 import numpy as np
 import pandas as pd
 import sklearn.preprocessing as pp
-from scipy.sparse import issparse
+from scipy.sparse import issparse, csc_matrix, coo_matrix
 from scipy.spatial.distance import jaccard
 from sklearn.metrics import pairwise_distances, recall_score, precision_score, auc
 from sklearn.metrics.pairwise import PAIRWISE_BOOLEAN_FUNCTIONS, PAIRWISE_DISTANCE_FUNCTIONS

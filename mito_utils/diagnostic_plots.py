@@ -3,16 +3,196 @@ Utils and plotting functions to visualize and inspect SNVs from a MAESTER experi
 """
 
 import gc
+from matplotlib.ticker import FixedLocator, FuncFormatter
 from itertools import product
 from .preprocessing import *
 from mito_utils.utils import *
 from mito_utils.plotting_base import *
 
 
+## 
+
+
+# Current diagnosti plots
+def vars_AF_dist(afm, ax=None, color='b', title=None, **kwargs):
+    """
+    Ranked AF distributions (VG-like).
+    """
+    to_plot = afm.X.copy()
+    to_plot[np.isnan(to_plot)] = 0
+
+    for i in range(to_plot.shape[1]):
+        x = to_plot[:, i]
+        x = np.sort(x)
+        ax.plot(x, '-', color=color, **kwargs)
+
+    if title is None:
+        t = 'Ranked AF distributions, per variant'
+    else:
+        t = title
+    format_ax(ax=ax, title=t, xlabel='Cells (ranked)', ylabel='Allelic Frequency (AF)')
+
+    return ax
+
+
 ##
 
 
-# Cell level diagnostics
+def plot_ncells_nAD(afm, ax=None, title=None, xticks=None, yticks=None, s=5, c='k'):
+    """
+    Plots similar to Weng et al., 2024, followed by the two commentaries from Lareau and Weng.
+    n+ cells vs n 
+    """
+
+    afm = filter_baseline(afm)
+    var_sites = afm.var_names.map(lambda x: x.split('_')[0])
+    test = var_sites.value_counts()[var_sites]==1
+    afm = afm[:,afm.var_names[test]].copy()
+    afm = filter_sites(afm)
+    vars_df = make_vars_df(afm)
+    af_confident_detection = .0
+    AD, _, _ = get_AD_DP(afm)
+    assert AD.A.T.shape == afm.shape
+    x = np.nanmean(np.where(afm.X>af_confident_detection, AD.A.T, np.nan), axis=0)
+    x[np.isnan(x)] = 0
+    vars_df['mean_AD_in_confident'] = x
+
+    ax.plot(vars_df['Variant_CellN'], vars_df['mean_AD_in_confident'], 'o', c=c, alpha=.2, markersize=s)
+    ax.set_yscale('log', base=2)
+    ax.set_xscale('log', base=2)
+    xticks = [1,2,5,10,20,40,80,160,320,640] if xticks is None else xticks
+    yticks = [1,2,4,8,16,32,64,132,264] if yticks is None else yticks
+    ax.xaxis.set_major_locator(FixedLocator(xticks))
+    ax.yaxis.set_major_locator(FixedLocator(yticks))
+
+    def integer_formatter(val, pos):
+        return f'{int(val)}'
+
+    ax.xaxis.set_major_formatter(FuncFormatter(integer_formatter))
+    ax.yaxis.set_major_formatter(FuncFormatter(integer_formatter))
+    ax.set(xlabel='n +cells', ylabel='Mean n ALT UMI / +cell', title='' if title is None else title)
+
+    return ax
+
+
+##
+
+
+def mut_profile(a, ref_df, figsize=(6,3)):
+    """
+    MutationProfile_bulk (Weng et al., 2024).
+    """
+    called_variants = a.var_names.map(lambda x: ''.join(x.split('_')))
+    ref_df['called'] = ref_df['variant'].isin(called_variants)
+    total = len(ref_df)
+    total_called = ref_df['called'].sum()
+
+    grouped = ref_df.groupby(['three_plot', 'group_change', 'strand'])
+    prop_df = grouped.agg(
+        observed_prop_called=('called', lambda x: x.sum() / total_called),
+        expected_prop=('variant', lambda x: x.count() / total),
+        n_obs=('called', 'sum'),
+        n_total=('variant', 'count')
+    ).reset_index()
+
+    prop_df['fc_called'] = prop_df['observed_prop_called'] / prop_df['expected_prop']
+    prop_df = prop_df.set_index('three_plot')
+    prop_df['group_change'] = prop_df['group_change'].map(lambda x: '>'.join(list(x)))
+
+
+    fig, axs = plt.subplots(1, prop_df['group_change'].unique().size, figsize=figsize, sharey=True, gridspec_kw={'wspace': 0.1},
+                            constrained_layout=True)
+    strand_palette = {'H': 'darkred', 'L': 'blue'}
+
+    for i,x in enumerate(prop_df['group_change'].unique()):
+        ax = axs.ravel()[i]
+        df_ = prop_df.query('group_change==@x')
+        bar(df_, 'n_obs', by='strand', c=strand_palette, ax=ax, s=1, a=.8, annot=False)
+        format_ax(ax, xticks=[], xlabel=x, ylabel='Substitution rate' if i==0 else '', title=f'n: {df_["n_obs"].sum()}')
+
+    add_legend(ax=axs.ravel()[0], colors=strand_palette, ncols=1, loc='upper left', bbox_to_anchor=(0,1), label='Strand', ticks_size=6)
+    fig.tight_layout()
+
+    return fig
+
+
+##
+
+
+def MT_coverage_polar(afm, ax=None, title=None):
+    """
+    Plot log10 nUMIs coverare across MT-genome positions.
+    """
+    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
+    mean_x = x.mean()
+    theta = np.linspace(0, 2*np.pi, len(x))
+
+    ticks = [ 
+        int(round(x)) \
+        for x in np.linspace(1, afm.uns['per_position_coverage'].shape[1], 8) 
+    ][:7]
+
+    if title is None:
+        t = 'MT-genome coverage'
+    else:
+        t = f'{title} (mean={mean_x:.2f})'
+
+    ax.plot(theta, np.log10(x), '-', linewidth=0.8)
+    ax.plot(theta, [ np.log10(mean_x) for _ in theta ], 'r--')
+    ax.set_theta_offset(np.pi/2)
+    ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
+    ax.set_xticklabels(ticks)
+    ax.set(xlabel='Position (bp)', title=t)
+
+    return ax
+
+
+##
+
+
+def MT_coverage_by_gene_polar(afm, ax=None, sample=None):
+    """
+    Plot log10 nUMIs coverare across MT-genome positions.
+    """
+
+    df_mt = pd.DataFrame(MAESTER_genes_positions, columns=['gene', 'start', 'end']).set_index('gene').sort_values('start')
+    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
+
+    test_sites = mask_mt_sites(afm)
+    median_target = afm.uns['per_position_coverage'].loc[:,test_sites].median(axis=0).median()
+    median_untarget = afm.uns['per_position_coverage'].loc[:,~test_sites].median(axis=0).median()
+
+    theta = np.linspace(0, 2*np.pi, len(x))
+    colors = { k:v for k,v in zip(df_mt.index, sc.pl.palettes.default_102[:df_mt.shape[0]])}
+
+    ax.plot(theta, np.log10(x), '-', linewidth=.7, color='grey')
+    idx = np.arange(1,x.size+1)
+    for gene in colors:
+        start, stop = df_mt.loc[gene, ['start', 'end']].values
+        test = (idx>=start) & (idx<=stop)
+        ax.plot(theta[test], np.log10(x[test]), color=colors[gene], linewidth=1.5)
+
+    ticks = [ 
+        int(round(x)) \
+        for x in np.linspace(1, afm.uns['per_position_coverage'].shape[1], 8) 
+    ][:7]
+    ax.set_theta_offset(np.pi/2)
+    ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
+    ax.set_xticklabels(ticks)
+    ax.xaxis.set_tick_params(labelsize=7)
+    ax.yaxis.set_tick_params(labelsize=7)
+    ax.set_rlabel_position(0) 
+    ax.set(xlabel='Position (bp)', title=f'{sample}\n n UMIs (median) target:{median_target:.2f}, untarget:{median_untarget:.2f}')
+
+    return ax
+
+
+##
+
+
+##------------------------------------------------- LEGACY
+
+
 def sturges(x):   
     return round(1 + 2 * 3.322 * np.log(len(x))) 
 
@@ -193,71 +373,6 @@ def vars_n_positive_dist(afm, ax=None, color='k', title=None, xlim=(-10,100)):
     return ax
 
 
-#
-
-
-def vars_AF_dist(afm, ax=None, color='b', title=None, **kwargs):
-    """
-    Ranked AF distributions (VG-like).
-    """
-    to_plot = afm.X.copy()
-    to_plot[np.isnan(to_plot)] = 0
-
-    for i in range(to_plot.shape[1]):
-        x = to_plot[:, i]
-        x = np.sort(x)
-        ax.plot(x, '-', color=color, **kwargs)
-
-    if title is None:
-        t = 'Ranked AF distributions, per variant'
-    else:
-        t = title
-    format_ax(ax=ax, title=t, xlabel='Cells (ranked)', ylabel='Allelic Frequency (AF)')
-
-    return ax
-
-
-##
-
-
-def mut_profile(a, ref_df, figsize=(6,3)):
-    """
-    MutationProfile_bulk (Weng et al., 2024).
-    """
-    called_variants = a.var_names.map(lambda x: ''.join(x.split('_')))
-    ref_df['called'] = ref_df['variant'].isin(called_variants)
-    total = len(ref_df)
-    total_called = ref_df['called'].sum()
-
-    grouped = ref_df.groupby(['three_plot', 'group_change', 'strand'])
-    prop_df = grouped.agg(
-        observed_prop_called=('called', lambda x: x.sum() / total_called),
-        expected_prop=('variant', lambda x: x.count() / total),
-        n_obs=('called', 'sum'),
-        n_total=('variant', 'count')
-    ).reset_index()
-
-    prop_df['fc_called'] = prop_df['observed_prop_called'] / prop_df['expected_prop']
-    prop_df = prop_df.set_index('three_plot')
-    prop_df['group_change'] = prop_df['group_change'].map(lambda x: '>'.join(list(x)))
-
-
-    fig, axs = plt.subplots(1, prop_df['group_change'].unique().size, figsize=figsize, sharey=True, gridspec_kw={'wspace': 0.1},
-                            constrained_layout=True)
-    strand_palette = {'H': 'darkred', 'L': 'blue'}
-
-    for i,x in enumerate(prop_df['group_change'].unique()):
-        ax = axs.ravel()[i]
-        df_ = prop_df.query('group_change==@x')
-        bar(df_, 'n_obs', by='strand', c=strand_palette, ax=ax, s=1, a=.8, annot=False)
-        format_ax(ax, xticks=[], xlabel=x, ylabel='Substitution rate' if i==0 else '', title=f'n: {df_["n_obs"].sum()}')
-
-    add_legend(ax=axs.ravel()[0], colors=strand_palette, ncols=1, loc='upper left', bbox_to_anchor=(0,1), label='Strand', ticks_size=6)
-    fig.tight_layout()
-
-    return fig
-
-
 ##
 
 
@@ -288,281 +403,6 @@ def AF_mean_var_corr(afm, ax=None, color='b', title=None):
     ax.text(0.7, 0.9, f"Pearson's r: {corr:.2f}", transform=ax.transAxes)
 
     return ax
-
-
-##
-
-
-def positive_events_by_var_type(afm, orig, ax=None, color=None, title=None):
-    """
-    % of +events over total + events, stratified by variant type.
-    """
-    # Compute
-    bases = ['A', 'C', 'T', 'G']
-    var_types = [ '>'.join(x) for x in product(bases, bases) if x[0] != x[1] ]
-
-    var_type = []
-    for x in afm.var_names:
-        idx = x.split('_')[0]
-        mt_base = x.split('_')[1]
-        ref_base = orig.var.loc[idx, 'refAllele']
-        t = '>'.join([ref_base, mt_base])
-        var_type.append(t)
-
-    afm.var['var_type'] = var_type
-
-    n_positive = {}
-    total_positive_events = np.sum(afm.X > 0)
-    for x in afm.var['var_type'].unique():
-        if not x.startswith('N'):
-            test = afm.var['var_type'] == x
-            n = np.sum(afm[:, test].X.toarray() > 0) / total_positive_events
-            n_positive[x] = n
-
-    # Viz 
-    df_ = pd.Series(n_positive).to_frame().rename(
-        columns={0:'freq'}).sort_values(by='freq', ascending=False)
-    df_['freq'] = df_['freq'].map(lambda x: round(x*100, 2))
-
-    bar(df_, 'freq', ax=ax, s=0.75, c=color, annot_size=8)
-
-    if title is None:
-        t = '\n% of + events over total + events'
-    else:
-        t = title
-    format_ax(ax=ax, title=t, xticks=df_.index, ylabel='\n%')
-
-    return ax
-
-
-##
-
-
-def MT_coverage_polar(afm, ax=None, title=None):
-    """
-    Plot log10 nUMIs coverare across MT-genome positions.
-    """
-    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
-    mean_x = x.mean()
-    theta = np.linspace(0, 2*np.pi, len(x))
-
-    ticks = [ 
-        int(round(x)) \
-        for x in np.linspace(1, afm.uns['per_position_coverage'].shape[1], 8) 
-    ][:7]
-
-    if title is None:
-        t = 'MT-genome coverage'
-    else:
-        t = f'{title} (mean={mean_x:.2f})'
-
-    ax.plot(theta, np.log10(x), '-', linewidth=0.8)
-    ax.plot(theta, [ np.log10(mean_x) for _ in theta ], 'r--')
-    ax.set_theta_offset(np.pi/2)
-    ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
-    ax.set_xticklabels(ticks)
-    ax.set(xlabel='Position (bp)', title=t)
-
-    return ax
-
-
-##
-
-
-def MT_coverage_by_gene_polar(afm, ax=None, title='Gene coverage'):
-    """
-    Plot log10 nUMIs coverare across MT-genome positions.
-    """
-
-    df_mt = pd.DataFrame(all_mt_genes_positions, columns=['gene', 'start', 'end']).set_index('gene')
-    df_mt = df_mt.sort_values('start')
-
-    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
-    theta = np.linspace(0, 2*np.pi, len(x))
-    ticks = df_mt['start'] + ((df_mt['end']-df_mt['start'])/2)
-    ticks = (ticks - ticks.min()) / (ticks.max() - ticks.min())
-    ticks = ticks * 2 * np.pi
-
-    colors = { k:v for k,v in zip(df_mt.index, sc.pl.palettes.default_102[:df_mt.shape[0]])}
-
-    ax.plot(theta, np.log10(x), '-', linewidth=.7, color='grey')
-    idx = np.arange(1,x.size+1)
-    for gene in colors:
-        start, stop = df_mt.loc[gene, ['start', 'end']].values
-        test = (idx>=start) & (idx<=stop)
-        ax.plot(theta[test], np.log10(x[test]), color=colors[gene], linewidth=1.5)
-
-    ax.set_theta_offset(np.pi/2)
-    ax.set_xticks(ticks)
-    ax.set_xticklabels(df_mt.index)
-    ax.xaxis.set_tick_params(labelsize=4)
-    ax.set_yticks([])
-    ax.set_yticklabels([])
-    ax.set(xlabel='MT-genome position (bp)', title=title)
-
-    return ax
-
-
-##
-
-
-def viz_clone_variants(afm, clone_name, sample=None, path=None, filtering=None, 
-    min_cell_number=None, min_cov_treshold=None, model=None, figsize=(12, 10)):
-    """
-    Visualization summary of the properties of a clone distiguishing variants, within some analysis context
-    """
-
-    # Read clone classification report
-    file_name = f'clones_{sample}_{filtering}_{min_cell_number}_{min_cov_treshold}_{model}_f1.xlsx'
-    class_df = pd.read_excel(path + file_name, index_col=0)
-    class_df = class_df.loc[class_df['comparison'] == f'{clone_name}_vs_rest']
-
-    # Filter sample AFM as done in the classification picked
-    a_cells, a = filter_cells_and_vars(
-        afm, 
-        min_cell_number=min_cell_number,
-        min_cov_treshold=min_cov_treshold,
-        variants=class_df.index
-    )
-    gc.collect()
-
-    ##
-
-    # Draw the figure: top clone distinguishing features
-
-    # Figure
-    fig, axs = plt.subplots(2, 2, figsize=figsize, constrained_layout=True)
-
-    # Sub 1: clone size in its sample
-    colors = {'other':'grey', clone_name:'red'}
-    df_ = a_cells.obs.groupby('GBC').size().to_frame().rename(
-        columns={0:'n_cells'}).sort_values('n_cells', ascending=False).assign(
-        feat=lambda x: np.where(x.index == clone_name, clone_name, 'other')
-        )
-    bar(df_, 'n_cells', by='feat', c=colors, s=0.75, ax=axs[0,0])
-    format_ax(ax=axs[0,0], 
-        title=f'{sample} clonal abundances', 
-        xticks='', xlabel='Clones', ylabel='n cells', xsize=8, rotx=90
-    )
-    handles = create_handles(colors.keys(), colors=colors.values())
-    axs[0,0].legend(handles, colors.keys(), loc='upper right', 
-        title='Clone', frameon=False, bbox_to_anchor=(0.98, 0.95)
-    )
-    axs[0,0].text(0.6, 0.60, f"min_cell_number: {min_cell_number}", transform=axs[0,0].transAxes)
-    axs[0,0].text(0.6, 0.55, f"min_cov_treshold: {min_cov_treshold}", transform=axs[0,0].transAxes)
-
-    ##
-
-    # # Sub 2: variants stats, within selected cells 
-    # Density, Median coverage and AF for: 
-    # a) all muts; b) muts selected in the picked analysis; c) and top10 ranked for feature importance for
-    # the clone
-    df_vars = summary_stats_vars(a_cells)
-    df_vars['status'] = np.where(df_vars.index.isin(class_df.index), 'selected', 'non-selected')
-
-    if (df_vars['status'] == 'selected').sum() > 10:
-        idx = np.where((df_vars['status'].values == 'selected') & df_vars.index.isin(class_df.index[:10]))[0]
-        idx = df_vars.index[idx]
-        df_vars.loc[idx, ['status']] = 'top10'
-        colors = {'non-selected':'grey', 'selected':'red', 'top10':'black'}
-        scatter(df_vars.query('status == "non-selected"'), 'median_coverage', 'median_AF', s=10, c=colors['non-selected'], ax=axs[0,1])
-        scatter(df_vars.query('status == "selected"'), 'median_coverage', 'median_AF', s=10, c=colors['selected'], ax=axs[0,1])
-        scatter(df_vars.query('status == "top10"'), 'median_coverage', 'median_AF', s=10, c=colors['top10'], ax=axs[0,1])
-    else:
-        colors = {'non-selected':'grey', 'selected':'red'}
-        scatter(df_vars.query('status == "non-selected"'), 'median_coverage', 'median_AF', s=10, c=colors['non-selected'], ax=axs[0,1])
-        scatter(df_vars.query('status == "selected"'), 'median_coverage', 'median_AF', s=10, c=colors['selected'], ax=axs[0,1])
-    
-    handles = create_handles(colors.keys(), colors=colors.values())
-    axs[0,1].legend(handles, colors.keys(), loc='upper right', 
-        bbox_to_anchor=(0.90, 0.95), ncol=1, frameon=False, title='Variant'
-    )
-
-    format_ax(df_vars, ax=axs[0,1], title='Variants properties', xlabel='median_coverage', ylabel='median_AF')
-    axs[0,1].set(xlim=(-5, 200), ylim=(-0.01, 0.4))
-
-    n_non_selected = df_vars.query('status == "non-selected"').shape[0]
-    n_selected = df_vars.query('status == "selected"').shape[0]
-    axs[0,1].text(0.6, 0.60, f"n non-selected: {n_non_selected}", transform=axs[0,1].transAxes)
-    axs[0,1].text(0.6, 0.55, f"n selected: {n_selected}", transform=axs[0,1].transAxes)
-
-    axins = inset_axes(axs[0,1], width="32%", height="30%", borderpad=2.5,
-        bbox_transform=axs[0,1].transAxes, loc=4
-    )
-
-    if (df_vars['status'] == 'top10').any():
-        violin(
-            df_vars.query('status in ["selected", "top10"]').loc[:, 
-            ['density', 'median_AF', 'status']].melt(
-                id_vars='status', var_name='feature', value_name='value'
-            ), 
-            'feature', 'value', by='status', c={'selected':colors['selected'], 'top10':colors['top10']}, ax=axins
-        )
-    else:
-        violin(
-            df_vars.query('status in ["non-selected", "selected"]').loc[:, 
-            ['density', 'median_AF', 'status']].melt(
-                id_vars='status', var_name='feature', value_name='value'
-            ), 
-            'feature', 'value', by='status', c={'non-selected':colors['non-selected'], 'selected':colors['selected']}, ax=axins
-        )
-
-    format_ax(ax=axins, xticks=['density', 'median_AF'])
-
-    ##
-
-    # Sub3: VAF profile for: 
-    # 1) non-selected vars, 2) vars selected in the picked analysis and 3) top10 vars 
-    to_plot = a_cells.copy()
-    to_plot.X[np.isnan(to_plot.X)] = 0
-    gc.collect()
-
-    if (df_vars['status'] == 'top10').any():
-        vars_non_selected = df_vars.query('status == "non-selected"').index
-        vars_selected = df_vars.query('status == "selected"').index
-        vars_top10 = df_vars.query('status == "top10"').index
-
-        for i, var in enumerate(to_plot.var_names):
-            x = to_plot.X[:, i]
-            x = np.sort(x)
-            if var in vars_non_selected:
-                axs[1,0].plot(x, '--', color=colors['non-selected'], linewidth=0.01)
-            elif var in vars_selected:
-                axs[1,0].plot(x, '--', color=colors['selected'], linewidth=0.3)
-            elif var in vars_top10:
-                axs[1,0].plot(x, '--', color=colors['top10'], linewidth=2)
-    else:
-        vars_non_selected = df_vars.query('status == "non-selected"').index
-        vars_selected = df_vars.query('status == "selected"').index
-
-        for i, var in enumerate(to_plot.var_names):
-            x = to_plot.X[:, i]
-            x = np.sort(x)
-            if var in vars_non_selected:
-                axs[1,0].plot(x, '--', color=colors['non-selected'], linewidth=0.01)
-            elif var in vars_selected:
-                axs[1,0].plot(x, '--', color=colors['selected'], linewidth=0.5)
-
-    format_ax(ax=axs[1,0], title='Ranked AFs', xlabel='Cell rank', ylabel='AF')
-
-    # handles = create_handles(colors.keys(), marker='o', colors=colors.values(), size=10, width=0.5)
-    # axs[1,0].legend(handles, colors.keys(), title='Variant', loc='upper left', 
-    #     bbox_to_anchor=(0.05, 0.95), ncol=1, frameon=False
-    # )
-
-    ##
-
-    # Sub4: Feature importance of top10 muts
-    stem_plot(class_df, 'effect_size', ax=axs[1,1])
-    format_ax(ax=axs[1,1], yticks='', ylabel='Selected variants', xlabel='Feature importance', 
-        title=f"Analysis: {filtering}_{min_cell_number}_{min_cov_treshold}_{model}")
-    top_vars = class_df.index[:3]
-    axs[1,1].text(0.25, 0.1, f"Top 3 variants: {top_vars[0]}, {top_vars[1]}, {top_vars[2]}", transform=axs[1,1].transAxes)
-
-    # Save
-    fig.suptitle(f'{clone_name} clone features')
-
-    return fig
 
 
 ##
