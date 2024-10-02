@@ -36,7 +36,7 @@ def nans_as_zeros(afm):
 ##
 
 
-def make_AFM(path_afm, path_meta=None, sample='MDA_clones', only_variants=True, cell_filter='filter1', 
+def make_AFM(path_afm, path_meta=None, cell_file=None, sample='MDA_clones', only_variants=True, cell_filter='filter1', 
                     nmads=5, mean_cov_all=25, median_cov_target=30, min_perc_covered_sites=.75, is_covered_treshold=10):
     """
     Read and format a complete Allele Frequency Matrix (follows the logic of Miller et al., 2022). 
@@ -44,6 +44,7 @@ def make_AFM(path_afm, path_meta=None, sample='MDA_clones', only_variants=True, 
     Args:
         path_afm (str): path to AFM.h5ad, the collection of cell x site feature table output of mito_preprocessing
         path_meta (str, optional): path to cells_meta.csv, cells_metadata for all valid CBs
+        cell_file (str, optional): path <txt.> file containing desired subsets of valid CBs present in cells metadata.
         sample (str, optional): sample name. Defaults to 'MDA_clones'.
         only_variants (bool, optional): Return AF of all possible site-bases or only variants from the rRCS MT-reference. Defaults to True.
         cell_filter (str, optional): cell filter.
@@ -70,6 +71,9 @@ def make_AFM(path_afm, path_meta=None, sample='MDA_clones', only_variants=True, 
     else:
         meta = None
         valid_cbcs = set(A.obs_names)
+    
+    if cell_file is not None: 
+        valid_cbcs = set(valid_cbcs) & set(pd.read_csv(cell_file, header=None)[0]) 
 
     print(f'Valid CBs: {len(valid_cbcs)}')
 
@@ -226,7 +230,7 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, bin_method='
     # to df
     df = pd.Series(d).T.to_frame('value').reset_index().rename(columns={'index':'metric'})
 
-    return df
+    return df, coo_matrix(X_bin.T)
 
 
 ##
@@ -239,7 +243,8 @@ def filter_AFM(
     spatial_metrics=False, tree_kwargs={}, nproc=8,
     fit_mixtures=False, only_positive_deltaBIC=False,  
     path_priors=None, max_prior=1, path_dbSNP=None, path_REDIdb=None, 
-    compute_enrichment=False, bin_method='vanilla', binarization_kwargs={}
+    compute_enrichment=False, bin_method='vanilla', binarization_kwargs={}, 
+    return_X_bin=False
     ):
     """
     Filter an Allele Frequency Matrix (AFM) for downstream analysis.
@@ -344,6 +349,8 @@ def filter_AFM(
         Binarization strategy used for i) compute the final dataset statistics (i.e., mutation number, connectivity ecc) and ii) lineage enrichment. Default is `MI_TO`
     binarization_kwargs : dict, optional
         Binarization strategy **kwargs (see mito_utils.distances.call_genotypes). Default is `{}`
+    return_X_bin : bool, optional
+        Return the binarized and filtered AF matrix. Default is False
 
     Returns
     -------
@@ -511,19 +518,20 @@ def filter_AFM(
             a.var[f'FDR_{target_lineage}'] = res['FDR']
             a.var[f'odds_ratio_{target_lineage}'] = res['odds_ratio']
 
-    # Last dataset stats
-    dataset_df = pd.concat([
-        dataset_df, 
-        compute_metrics_filtered(
-            a, spatial_metrics=spatial_metrics, 
-            weights=1-a.var['prior'].values if 'prior' in a.var.columns else None, 
-            tree_kwargs=tree_kwargs,
-            bin_method=bin_method, 
-            binarization_kwargs=binarization_kwargs
-        )
-    ])
+    # Last dataset stats 
+    final_metrics, X_bin = compute_metrics_filtered(
+        a, spatial_metrics=spatial_metrics, 
+        weights=1-a.var['prior'].values if 'prior' in a.var.columns else None, 
+        tree_kwargs=tree_kwargs,
+        bin_method=bin_method, 
+        binarization_kwargs=binarization_kwargs
+    )
+    dataset_df = pd.concat([dataset_df,final_metrics])
     
-    return a, dataset_df
+    if return_X_bin:
+        return a, dataset_df, X_bin
+    else:
+        return a, dataset_df
 
 
 ##

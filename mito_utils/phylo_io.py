@@ -33,9 +33,9 @@ def _add_edges(G, clade, parent=None, counter=[1]):
 ##
 
 
-def read_newick(path) -> CassiopeiaTree:
+def read_newick(path, X_raw=None, X_bin=None, D=None, meta=None) -> CassiopeiaTree:
     """
-    Read an iqtree newick as a CassiopeiaTree object.
+    Read an newick string as a CassiopeiaTree object.
     """
     with open(path, 'r') as f:
         newick = f.readlines()[0]
@@ -49,10 +49,18 @@ def read_newick(path) -> CassiopeiaTree:
         length = data['length'] if 'length' in data else 0.0
         edge_list.append((u, v, length))
        
-    cassiopeia_tree = CassiopeiaTree(tree=G)
+    cassiopeia_tree = CassiopeiaTree(
+        tree=G, 
+        character_matrix=X_bin, 
+        dissimilarity_map=D, 
+        cell_meta=meta
+    )
+    if X_raw is not None and X_bin is not None:
+        cassiopeia_tree.layers['raw'] = X_raw
+        cassiopeia_tree.layers['transformed'] = X_bin
+
     for u, v, length in edge_list:
         cassiopeia_tree.set_branch_length(u, v, length)
-
     for node in G.nodes:
         if 'support' in G.nodes[node]:
             support = G.nodes[node]['support']

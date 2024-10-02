@@ -257,7 +257,7 @@ def preprocess_feature_matrix(X=None, a=None, AD=None, DP=None, metric='euclidea
 
 
 def compute_distances(
-    X=None, a=None, AD=None, DP=None, 
+    X=None, a=None, AD=None, DP=None, D=None,
     metric='euclidean', binary=True, bin_method=None,
     weights=None, scale=True, ncores=8, 
     metric_kwargs={}, binarization_kwargs={}, verbose=False, return_matrices=False
@@ -270,6 +270,7 @@ def compute_distances(
         a (AnnData, optional): An annotated cell x character matrix. Defaults: None.
         AD (np.array, optional): A cell x site alternative allele reads (or UMIs) count matrix. Default: None.
         DP (np.array, optional): A cell x site total reads (or UMIs) count matrix. Default: None.
+        D (np.array, optional): Precomputed cell x cell distance matrix. Default: None.
         metric ((str, callable), optional): distance metric. Default: 'euclidean'.
         binary (bool, True): specifies wheater the user-provided metric requires discretization of input character matrices or not.
             To use only in case metric is a callable. Default: True.
@@ -293,8 +294,10 @@ def compute_distances(
         X=X, a=a, AD=AD, DP=DP, metric=metric, binary=binary, bin_method=bin_method, 
         weights=weights, scale=scale, binarization_kwargs=binarization_kwargs
     )
-    D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False, **metric_kwargs)
 
+    if D is None:
+        D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False, **metric_kwargs)
+ 
     if return_matrices:
         return X_raw, X, D
     else:
@@ -310,6 +313,8 @@ def distance_AUPRC(D, labels):
     Reports Area Under Precision Recall Curve.
     """
 
+    labels = pd.Categorical(labels) 
+
     final = {}
     for alpha in np.linspace(0,1,10):
  
@@ -319,8 +324,8 @@ def distance_AUPRC(D, labels):
         for i in range(D.shape[0]):
             x = rescale(D[i,:])
             p_list.append(np.where(x<=alpha, 1, 0))
-            c = labels.cat.codes.values[i]
-            gt_list.append(np.where(labels.cat.codes.values==c, 1, 0))
+            c = labels.codes[i]
+            gt_list.append(np.where(labels.codes==c, 1, 0))
 
         predicted = np.concatenate(p_list)
         gt = np.concatenate(gt_list)

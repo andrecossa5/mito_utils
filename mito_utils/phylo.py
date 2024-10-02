@@ -140,7 +140,7 @@ def jackknife_allele_tables(ad=None, dp=None, M=None):
 
 
 def _check_input(
-    X=None, a=None, AD=None, DP=None, meta=None, var_names=None, metric='jaccard', 
+    X=None, a=None, AD=None, DP=None, D=None, meta=None, var_names=None, metric='jaccard', 
     binary=True, bin_method='vanilla', scale=True, solver='NJ',
     weights=None, ncores=8, metric_kwargs={}, binarization_kwargs={},
     ):
@@ -186,7 +186,7 @@ def _check_input(
             
     # Prep distance kwargs
     distance_kwargs = dict(
-        X=X, a=a, AD=AD, DP=DP, metric=metric, binary=binary, ncores=ncores, metric_kwargs=metric_kwargs,
+        X=X, a=a, AD=AD, DP=DP, D=D, metric=metric, binary=binary, ncores=ncores, metric_kwargs=metric_kwargs,
         bin_method=bin_method, weights=weights, scale=scale, binarization_kwargs=binarization_kwargs
     )
 
@@ -197,7 +197,7 @@ def _check_input(
 
 
 def build_tree(
-    X=None, a=None, AD=None, DP=None, meta=None, var_names=None,
+    X=None, a=None, AD=None, DP=None, D=None, meta=None, var_names=None,
     metric='jaccard', binary=True, bin_method='vanilla', 
     min_n_positive_cells=2, max_frac_positive=.95,
     scale=True, weights=None, solver='UPMGA', ncores=8, 
@@ -209,7 +209,7 @@ def build_tree(
     
     # Prep inputs
     kwargs = dict(
-        X=X, a=a, AD=AD, DP=DP, meta=meta, var_names=var_names, metric=metric, binary=binary, bin_method=bin_method, scale=scale,
+        X=X, a=a, AD=AD, DP=DP, D=D, meta=meta, var_names=var_names, metric=metric, binary=binary, bin_method=bin_method, scale=scale,
         weights=weights, ncores=ncores, metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs, solver=solver
     )
     distance_kwargs, solver_kwargs, _solver, cells, characters = _check_input(**kwargs)
@@ -479,7 +479,7 @@ def get_expanded_clones(tree, t=.05, min_depth=3, min_clade_size=None):
 ##
 
 
-def AFM_to_seqs(a=None, bin_method='MI_TO', binarization_kwargs={}):
+def AFM_to_seqs(a=None, X_bin=None, bin_method='MI_TO', binarization_kwargs={}):
     """
     Funtion to convert an AFM to a dictionary of sequences.
     """
@@ -490,12 +490,13 @@ def AFM_to_seqs(a=None, bin_method='MI_TO', binarization_kwargs={}):
     alt = ''.join([x[1] for x in L])
 
     # Binarize
-    M = call_genotypes(a=a, bin_method=bin_method, **binarization_kwargs)
+    if X_bin is None:
+        X_bin = call_genotypes(a=a, bin_method=bin_method, **binarization_kwargs)
 
     # Convert to a dict of strings
     d = {}
     for i, cell in enumerate(a.obs_names):
-        m_ = M[i,:]
+        m_ = X_bin[i,:]
         seq = []
         for j, char in enumerate(m_):
             if char == 1:
@@ -606,7 +607,7 @@ def calculate_corr_distances(tree):
     L = []
     undirected = tree.get_tree_topology().to_undirected()
     for node in tree.leaves:
-        d = nx.shortest_path_length(undirected, source=node, weight="length")
+        d = nx.shortest_path_length(undirected, source=node)
         L.append(d)
     D_phylo = pd.DataFrame(L, index=tree.leaves).loc[tree.leaves, tree.leaves]
     assert (D_phylo.index == D.index).all()

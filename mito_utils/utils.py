@@ -4,6 +4,8 @@ Miscellaneous utilities.
 
 import os 
 import time 
+import random
+import string
 import pickle
 import json
 from shutil import rmtree
@@ -151,12 +153,10 @@ def ji(x, y):
 ##
 
 
-
-def process_json(path_filtering, filtering_key):
+def process_char_filtering_kwargs(path_filtering, filtering_key):
     """
     Processing the filtering options .json file.
     """
-    
     with open(path_filtering, 'r') as file:
         FILTERING_OPTIONS = json.load(file)
     
@@ -164,7 +164,7 @@ def process_json(path_filtering, filtering_key):
         d = FILTERING_OPTIONS[filtering_key]
         filtering = d['filtering']
         filtering_kwargs = d['filtering_kwargs'] if 'filtering_kwargs' in d else {}
-        kwargs = d['kwargs'] if 'kwargs' in d else {}
+        kwargs = { k : d[k] for k in d if k not in ['filtering', 'filtering_kwargs'] }
         kwargs = {k: True if v == "True" else v for k, v in kwargs.items()}         # Nextflow and .json pain
         kwargs = {k: False if v == "False" else v for k, v in kwargs.items()}
     else:
@@ -175,6 +175,41 @@ def process_json(path_filtering, filtering_key):
 
 ##
 
+
+def process_bin_kwargs(path_bin, bin_key):
+    """
+    Processing the filtering options .json file.
+    """
+    
+    with open(path_bin, 'r') as file:
+        BIN_OPTIONS = json.load(file)
+    
+    if bin_key in BIN_OPTIONS:
+        d = BIN_OPTIONS[bin_key]
+        bin_method = d['bin_method']
+        binarization_kwargs = d['binarization_kwargs'] if 'binarization_kwargs' in d else {}
+    else:
+        raise KeyError(f'{bin_key} not in {path_bin}!')
+    
+    return bin_method, binarization_kwargs
+
+
+##
+
+
+def process_kwargs(path, key):
+    """
+    Processing .json file.
+    """
+
+    with open(path, 'r') as file:
+        OPTIONS = json.load(file)
+    kwargs = OPTIONS[key] if key in OPTIONS else {}
+
+    return kwargs
+
+
+##
 
 
 def traverse_and_extract_flat(base_dir, file_name='annotated_tree.pickle'):
@@ -205,3 +240,14 @@ def traverse_and_extract_flat(base_dir, file_name='annotated_tree.pickle'):
 
     return result
 
+
+##
+
+
+def generate_job_id(id_length=20):
+
+    characters = string.ascii_letters + string.digits  # All uppercase, lowercase letters, and digits
+    random_id = ''.join(random.choices(characters, k=id_length))
+    random_id = f'job_{random_id}'
+
+    return random_id
