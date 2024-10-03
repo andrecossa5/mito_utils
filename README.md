@@ -20,7 +20,15 @@ envs
 mamba env create -f <chosen environment name>.yml -n <your conda env name>
 ```
 
-4. activate the new environment (with successfull installation of all packages) and cd to the main mito_utils repo path.
+4. cassiopeia and MQuad packages need manual installation. After reproducing the environment:
+
+```bash
+mamba activate <chosen environment name>
+pip install mquad
+pip install git+https://github.com/YosefLab/Cassiopeia@master#egg=cassiopeia-lineage
+```
+
+5. After these steps, activate the new environment and cd to the main mito_utils repo path.
 Make the repo path visible to python import system.
 
 ```path
@@ -28,7 +36,7 @@ cd <path to mito_utils clone>
 mamba develop .
 ```
 
-5. Fire a python terminal and verify successfull installation.
+6. Fire a python terminal and verify successfull installation of all packages.
 
 ```python
 from mito_utils import *
