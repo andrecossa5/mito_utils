@@ -88,26 +88,26 @@ def create_colors(meta, chosen=None):
 ##
 
 
-def harmonize_colors(embs, palette=None):
+def harmonize_colors(df, group1=None, group2=None, palette=None):
     """
     Given two sets of labels, create two dicts of colors that match closely.
     """
     
     if palette is None:
-        if embs['GBC'].unique().size > 15:
+        if d2['GBC'].unique().size > 15:
             palette = [ matplotlib.colors.hex2color(x) for x in sc.pl.palettes.godsnot_102 ]
         else:
             palette = ten_godisnot
-            
-    cross = pd.crosstab(embs['inference'], embs['GBC'].astype('str'), normalize=0)
+
+    cross = pd.crosstab(df[group1].astype('str'), df[group2].astype('str'), normalize=0)
     # order = embs.groupby('inference').size().sort_values(ascending=False).index
     # cross = cross.loc[order,:]
     
-    gbc = []
-    inference = []
+    g1 = []
+    g2 = []
     colors = []
-    inference_labels = cross.index.to_list()
-    gbc_labels = cross.columns.to_list()
+    g1_labels = cross.index.to_list()
+    g2_labels = cross.columns.to_list()
 
     for i in range(cross.shape[0]):
 
@@ -121,33 +121,33 @@ def harmonize_colors(embs, palette=None):
         #     except:
         #         t -= 0.1            
 
-        inference.append(inference_labels[i])
+        g1.append(g1_labels[i])
         colors.append(palette[i])
                       
-        if not gbc_labels[j] in gbc:
-            gbc.append(gbc_labels[j])
+        if not g2_labels[j] in g2:
+            gg2bc.append(g2_labels[j])
             
     len(colors)
 
     # Final rescue
-    for clone in gbc_labels:
-        if clone not in gbc:
+    for x2 in g2_labels:
+        if x2 not in g2:
             i += 1
-            gbc.append(clone)
+            g2.append(x2)
             colors.append(palette[i])
             
-    colors_gbc = { k:v for k,v in zip(gbc, colors[:len(gbc)])} 
-    colors_inference = { k:v for k,v in zip(inference, colors[:len(inference)])} 
+    colors_g2 = { k:v for k,v in zip(g2, colors[:len(g2)])} 
+    colors_g1 = { k:v for k,v in zip(g1, colors[:len(g1)])} 
 
-    if 'unassigned' in embs['inference'].values:
-        colors_inference['unassigned'] = (
+    if 'unassigned' in df[g1].values:
+        colors_g1['unassigned'] = (
             0.8470588235294118, 0.8274509803921568, 0.792156862745098
         )
         
-    assert all([x in gbc_labels for x in colors_gbc])
-    assert all([x in inference_labels for x in inference])
+    assert all([x in g1_labels for x in colors_g1])
+    assert all([x in g2_labels for x in g2])
 
-    return colors_gbc, colors_inference
+    return colors_g1, colors_g2
     
         
 ##

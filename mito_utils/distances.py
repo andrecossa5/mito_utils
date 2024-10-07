@@ -34,7 +34,7 @@ def _get_X(a, X, AD, DP, scale=True):
     if a is not None:
         X = a.X if not issparse(a.X) else a.X.toarray()
     elif X is not None:
-        pass
+        X = X
     elif AD is not None and DP is not None:
         X = AD / (DP+.0000001)
     else:

@@ -111,7 +111,7 @@ def reduce_dimensions(
         X_reduced = find_diffusion_map(P_prime, D_left, n_eign=n_comps)
         feature_names = [ f'Diff{i}' for i in range(1, X_reduced.shape[1]+1)]
 
-    return X_reduced, feature_names
+    return pd.DataFrame(X_reduced, columns=feature_names)
 
 
 ##

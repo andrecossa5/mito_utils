@@ -78,11 +78,13 @@ def plot_ncells_nAD(afm, ax=None, title=None, xticks=None, yticks=None, s=5, c='
 ##
 
 
-def mut_profile(a, ref_df, figsize=(6,3)):
+def mut_profile(mut_list, ref_df=None, figsize=(6,3)):
     """
     MutationProfile_bulk (Weng et al., 2024).
     """
-    called_variants = a.var_names.map(lambda x: ''.join(x.split('_')))
+
+    called_variants = [ ''.join(x.split('_')) for x in mut_list ]
+        
     ref_df['called'] = ref_df['variant'].isin(called_variants)
     total = len(ref_df)
     total_called = ref_df['called'].sum()

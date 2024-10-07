@@ -3,6 +3,7 @@ Miscellaneous utilities.
 """
 
 import os 
+import re
 import time 
 import random
 import string
@@ -251,3 +252,40 @@ def generate_job_id(id_length=20):
     random_id = f'job_{random_id}'
 
     return random_id
+
+
+##
+
+
+def get_metrics(path, metric_pattern=None):
+    """
+    Retrieve metrics df.
+    """
+    L = []
+    for folder,_,files in os.walk(path):
+        for file in files:
+            if bool(re.search(metric_pattern, file)): 
+                sample = folder.split('/')[-2]
+                job_id = folder.split('/')[-1]
+                df = pd.read_csv(os.path.join(folder,file), index_col=0).assign(sample=sample)
+                if 'job_id' not in df.columns:
+                    df = df.assign(job_id=job_id)
+                df = df.rename(columns={'value':'metric_value'})
+                L.append(df)
+    df_metrics = pd.concat(L)
+
+    L = []
+    for folder,_,files in os.walk(path):
+        for file in files:
+            if bool(re.search('ops', file)): 
+                df = pd.read_csv(os.path.join(folder,file), index_col=0)
+                df = df.rename(columns={'value':'option_value'})
+                L.append(df)
+    df_ops = pd.concat(L).pivot(index='job_id', columns='option', values='option_value').reset_index()
+
+    df = df_metrics.merge(df_ops, on='job_id')
+
+    return df
+
+
+##
