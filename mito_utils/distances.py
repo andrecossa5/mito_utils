@@ -5,21 +5,21 @@ Module to create custom distance function among cell AF profiles.
 import numpy as np
 import pandas as pd
 import sklearn.preprocessing as pp
-from scipy.sparse import issparse, csc_matrix, coo_matrix
+from scipy.sparse import csr_matrix
 from scipy.spatial.distance import jaccard
 from sklearn.metrics import pairwise_distances, recall_score, precision_score, auc
 from sklearn.metrics.pairwise import PAIRWISE_BOOLEAN_FUNCTIONS, PAIRWISE_DISTANCE_FUNCTIONS
-from .filters import *
-from .preprocessing import *
-from .utils import rescale
-from .stats_utils import *
-from .kNN import *
+from mito_utils.filters import *
+from mito_utils.preprocessing import *
+from mito_utils.utils import rescale
+from mito_utils.stats_utils import *
+from mito_utils.kNN import *
 
 
 ##
 
 
-def _custom_MI_TO_jaccard(x,y):
+def custom_MI_TO_jaccard(x,y):
     mask = (x!=-1) & (y!=-1)
     return jaccard(x[mask], y[mask])
 
@@ -27,91 +27,15 @@ def _custom_MI_TO_jaccard(x,y):
 ##
 
 
-def _get_X(a, X, AD, DP, scale=True):
-    """
-    Get continuous character matrix according to given arguments.
-    """
-    if a is not None:
-        X = a.X if not issparse(a.X) else a.X.toarray()
-    elif X is not None:
-        X = X
-    elif AD is not None and DP is not None:
-        X = AD / (DP+.0000001)
-    else:
-        raise TypeError('Provide one between: a, X or AD and DP arguments')
-    if scale:
-        X = pp.scale(X)
-    return X
+discrete_metrics = PAIRWISE_BOOLEAN_FUNCTIONS 
+continuous_metrics = list(PAIRWISE_DISTANCE_FUNCTIONS.keys()) + ['correlation', 'sqeuclidean']
+custom_discrete_metrics = {'custom_MI_TO_jaccard':custom_MI_TO_jaccard}
 
 
 ##
 
 
-def get_AD_DP(afm, to='coo'):
-    """
-    From a given AFM matrix, find the AD and DP parallel matrices.
-    """
-    # Get DP counts
-    DP = afm.uns['per_position_coverage'].T.values
-    if to == 'coo':
-        DP = coo_matrix(DP)
-    else:
-        DP = csc_matrix(DP)
-        
-    # Get AD counts
-    sites = afm.uns['per_position_coverage'].columns
-    variants = afm.var_names
-    
-    # Check consistency sites/variants remaining after previous filters
-    test_1 = variants.map(lambda x: x.split('_')[0]).unique().isin(sites).all()
-    test_2 = sites.isin(variants.map(lambda x: x.split('_')[0]).unique()).all()
-    assert test_1 and test_2
-    
-    # Get alternative allele variants
-    ad_vars = []
-    only_sites_names = variants.map(lambda x: x.split('_')[0])
-    for x in sites:
-        test = only_sites_names == x
-        site_vars = variants[test]
-        if site_vars.size == 1:
-            ad_vars.append(site_vars[0])
-        else:
-            cum_sum = afm[:, site_vars].layers['coverage'].sum(axis=0)
-            idx_ad = np.argmax(cum_sum)
-            ad_vars.append(site_vars[idx_ad])
-            
-    # Get AD counts
-    AD = afm[:, ad_vars].layers['coverage'].T
-    if to == 'coo':
-        AD = coo_matrix(AD)
-    else:
-        AD = csc_matrix(AD)
-    
-    return AD, DP, ad_vars
-
-
-##
-
-
-def _get_AD_DP(a, X, AD, DP):
-    """
-    Private method to handle multiple inputs and retrieve (if possible), AD, DP matrices.
-    """
-    if a is not None:
-        AD, DP, _ = get_AD_DP(a)
-        AD = AD.A.T
-        DP = DP.A.T
-    elif AD is not None and DP is not None:
-        pass
-    else:
-        raise TypeError('Provide one between: 1) a, and 2) AD and DP.')
-    return AD, DP
-
-
-##
-
-
-def genotype_mixtures(AD, DP, t_prob=.75, t_vanilla=.01, min_AD=2, debug=False):
+def genotype_mixtures(AD, DP, t_prob=.75, t_vanilla=.001, min_AD=2, debug=False):
     """
     Single-cell MT-SNVs genotyping with binomial mixtures posterior probabilities thresholding (Kwock et al., 2022).
     """
@@ -124,7 +48,7 @@ def genotype_mixtures(AD, DP, t_prob=.75, t_vanilla=.01, min_AD=2, debug=False):
 ##
 
 
-def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=.01, min_AD=2, min_cell_prevalence=.05, debug=False):
+def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=.001, min_AD=2, min_cell_prevalence=.1, debug=False):
     """
     Hybrid genotype calling strategy: if a mutation has prevalence (AD>=min_AD and AF>=t_vanilla) >= min_cell_prevalence,
     use probabilistic modeling as in 'bin_mixtures'. Else, use simple tresholding as in 'vanilla' method.
@@ -195,113 +119,117 @@ def genotype_mixtures_smooth(AD, DP, t_prob=.75, k=10, gamma=.25, n_samples=100,
 ##
 
 
-def call_genotypes(a=None, X=None, AD=None, DP=None, bin_method='vanilla', t_prob=.75, t_vanilla=.01,
+def call_genotypes(afm, bin_method='vanilla', t_prob=.75, t_vanilla=.001,
                    k=10, gamma=.25, n_samples=100, min_AD=1, min_cell_prevalence=.1):
     """
     Call genotypes using simple thresholding or th MI_TO binomial mixtures approachm (w/i or w/o kNN smoothing).
     """
-    AD, DP = _get_AD_DP(a, X, AD, DP)
 
+    assert 'AD' in afm.layers and 'DP' in afm.layers
+
+    X = afm.X.A.copy()
+    AD = afm.layers['AD'].A.copy()
+    DP = afm.layers['DP'].A.copy()
+    
     if bin_method == 'vanilla':
-        X = np.where((AD/(DP+.0000001)>t_vanilla) & (AD>=min_AD),1,0)
+        X = np.where((X>=t_vanilla) & (AD>=min_AD), 1, 0)
     elif bin_method == 'bin_mixtures':
         X = genotype_mixtures(AD, DP, t_prob=t_prob, min_AD=min_AD)
     elif bin_method == 'bin_mixtures_smooth':
-        X = genotype_mixtures_smooth(AD, DP, t_prob=t_prob, k=k, gamma=gamma, n_samples=n_samples, min_AD=min_AD)
+        X = genotype_mixtures_smooth(AD, DP, t_prob=t_prob, k=k, gamma=gamma, 
+                                     n_samples=n_samples, min_AD=min_AD)
     elif bin_method == 'MI_TO':
-        X = genotype_MI_TO(AD, DP, t_prob=t_prob, t_vanilla=t_vanilla, min_AD=min_AD, min_cell_prevalence=min_cell_prevalence)
+        X = genotype_MI_TO(AD, DP, t_prob=t_prob, t_vanilla=t_vanilla, 
+                           min_AD=min_AD, min_cell_prevalence=min_cell_prevalence)
+    else:
+        raise ValueError("""
+                Provide one of the following genotype calling methods: 
+                vanilla, bin_mixtures, bin_mixtures_smooth, MI_TO
+                """
+            )
 
-    return X
+    afm.layers['bin'] = csr_matrix(X)
+    afm.uns['genotyping'] = {
+        'bin_method':bin_method, 't_prob':t_prob, 
+        't_vanilla':t_vanilla, 'min_AD':min_AD, 'min_cell_prevalence':min_cell_prevalence
+    }
 
 
 ##
 
 
-def preprocess_feature_matrix(X=None, a=None, AD=None, DP=None, metric='euclidean', binary=True,
-                              bin_method='vanilla', weights=None, scale=False, binarization_kwargs={}, verbose=False):
+def preprocess_feature_matrix(
+    afm, distance_key='distances', metric='custom_jaccard', bin_method='MI_TO', binarization_kwargs={}
+    ):
     """
-    Preprocess a feature matrix for some distance computations.
+    Preprocess a feature matrix for distancea computations.
     """
     
-    discrete_metrics = PAIRWISE_BOOLEAN_FUNCTIONS + ['custom_MI_TO_jaccard']
-    continuous_metrics = list(PAIRWISE_DISTANCE_FUNCTIONS.keys()) + ['correlation', 'sqeuclidean']
+    layer = 'bin'
+    afm.uns['genotyping'].update({**dict(bin_method=bin_method), **binarization_kwargs})
+    afm.uns['distance_calculations'] = {}
 
-    if metric in continuous_metrics or not binary:
-        binary = False
-        bin_method = None
-    elif metric in discrete_metrics or binary:
-        binary = True
-    
-    if verbose:
-        print(f'Preprocess feature matrix. Metric: {metric}, bin: {binary}, bin_method: {bin_method}')
+    if metric in continuous_metrics:
+        logging.info(f'Compute distances: metric={metric}')
+        layer = 'scaled'
+        afm.layers['scaled'] = csr_matrix(pp.scale(afm.X.A))
+        
+    elif metric in discrete_metrics or metric in custom_discrete_metrics:
+        logging.info(f'Compute distances: metric={metric}, bin_method={bin_method}')
+        if 'bin' not in afm.layers:
+            layer = 'bin'
+            call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+            
+    else:
+        raise ValueError(f'Specify for a valid metric in {continuous_metrics}, {discrete_metrics} or {custom_discrete_metrics}')
 
-    # Get raw AF matrix
-    X_raw = _get_X(a, X, AD, DP, scale=False)
-    
-    # Get rescaled or binarized AF matrix
-    if binary:
-        X = call_genotypes(a=a, X=X, AD=AD, DP=DP, bin_method=bin_method, **binarization_kwargs)
-        metric = _custom_MI_TO_jaccard if metric == 'custom_MI_TO_jaccard' else metric
-    elif not binary and scale:
-        X = pp.scale(X)
+    afm.uns['distance_calculations'][distance_key] = {'metric':metric}
+    afm.uns['distance_calculations'][distance_key]['layer'] = layer
 
-    # Weight differently features if necessary
-    if weights is not None:
-        weights = np.array(weights)
-        X = X * weights if not binary else np.round(X * weights)
 
-    return metric, X_raw, X
+##
+
+
+def _get_metric_and_layer(afm, distance_key):
+    layer = afm.uns['distance_calculations'][distance_key]['layer']
+    metric = afm.uns['distance_calculations'][distance_key]['metric']
+    metric = metric if metric not in custom_discrete_metrics else custom_discrete_metrics[metric]
+    return layer, metric
 
 
 ##
 
 
 def compute_distances(
-    X=None, a=None, AD=None, DP=None, D=None,
-    metric='euclidean', binary=True, bin_method=None,
-    weights=None, scale=True, ncores=8, 
-    metric_kwargs={}, binarization_kwargs={}, verbose=False, return_matrices=False
+    afm, distance_key='distances', metric='custom_jaccard', 
+    bin_method='MI_TO', ncores=8,  metric_kwargs={}, binarization_kwargs={}
     ):
     """
-    Calculates pairwise cell- (or sample-) by-cells distances in some character space (e.g., MT-SNVs mutation space).
+    Calculates pairwise cell--cell (or sample-) distances in some character space (e.g., MT-SNVs mutation space).
 
     Args:
-        X (np.array, optional): A cell x character matrix. Default: None.
-        a (AnnData, optional): An annotated cell x character matrix. Defaults: None.
-        AD (np.array, optional): A cell x site alternative allele reads (or UMIs) count matrix. Default: None.
-        DP (np.array, optional): A cell x site total reads (or UMIs) count matrix. Default: None.
-        D (np.array, optional): Precomputed cell x cell distance matrix. Default: None.
-        metric ((str, callable), optional): distance metric. Default: 'euclidean'.
-        binary (bool, True): specifies wheater the user-provided metric requires discretization of input character matrices or not.
-            To use only in case metric is a callable. Default: True.
-        bin_method (str, optional): method to binarise the provided character matrix, if the chosen metric involves comparison 
-            of discrete character vectors. Default: None.
-        weights (np.array, optional): A vector of character weights to differentially weight each feature at distance computation. Default: None.
-        scale (bool, optional): scales each character matrix column (i.e., characters) if X, or a are provided as character matrices 
-            and metric does not involve binarization. Default: True.
+        afm (AnnData): An annotated cell x character matrix with .X slot and bin or scaled layers.
+        distance_key (str, optional): Key in .obsp at which the new distances will be stored. Default: distances.
+        metric ((str, callable), optional): distance metric. Default: 'custom_jaccard'.
+        bin_method (str, optional): method to binarize the provided character matrix, if the chosen metric 
+            involves comparison of discrete character vectors. Default: MI_TO.
         ncores (int, optional): n processors for parallel computation. Default: 8.
         metric_kwargs (dict, optional): **kwargs of the metric function. Default: {}.
         binarization_kwargs (dict, optional): **kwargs of the discretization function. Default: {}.
 
     Returns:
-        np.array: n x n pairwise distance matrix.
+        Updates inplace .obsp slot in afm AnnData with key 'distances'.
     """
-
-    if verbose:
-        print(f'compute_distances with: metric={metric}, bin_method={bin_method}, ncores={ncores}.')
-    
-    metric, X_raw, X = preprocess_feature_matrix(
-        X=X, a=a, AD=AD, DP=DP, metric=metric, binary=binary, bin_method=bin_method, 
-        weights=weights, scale=scale, binarization_kwargs=binarization_kwargs
+    preprocess_feature_matrix(
+        afm, distance_key=distance_key, metric=metric, 
+        bin_method=bin_method, binarization_kwargs=binarization_kwargs
     )
+    layer, metric = _get_metric_and_layer(afm, distance_key)
+    X = afm.layers[layer].A.copy()
+    D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False, **metric_kwargs)
+    afm.obsp[distance_key] = csr_matrix(D)
 
-    if D is None:
-        D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False, **metric_kwargs)
- 
-    if return_matrices:
-        return X_raw, X, D
-    else:
-        return D
+    afm.uns['distance_calculations'][distance_key].update(metric_kwargs)
     
 
 ##

@@ -3,6 +3,7 @@ Miscellaneous utilities.
 """
 
 import os 
+import sys
 import re
 import time 
 import random
@@ -14,6 +15,16 @@ import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
+
+
+##
+
+
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Custom format
+)
 
 
 ##
@@ -74,22 +85,6 @@ def make_folder(path, name, overwrite=True):
         os.makedirs(name)
     else:
         pass
-
-
-##
-
-
-def set_logger(path, name, mode='w'):
-    """
-    A function to open a logs.txt file for a certain script, writing its trace at path_main/runs/step/.
-    """
-    logger = logging.getLogger("mito_benchmark")
-    handler = logging.FileHandler(os.path.join(path, name), mode=mode)
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-
-    return logger
 
 
 ##

@@ -28,7 +28,7 @@ solver_d = {
     
 ##
 
-solver_kwargs_d = {
+_solver_kwargs = {
     'UPMGA' : {},
     'NJ' : {'add_root':True},
     'spectral' : {},
@@ -139,85 +139,20 @@ def jackknife_allele_tables(ad=None, dp=None, M=None):
 ##
 
 
-def _check_input(
-    X=None, a=None, AD=None, DP=None, D=None, meta=None, var_names=None, metric='jaccard', 
-    binary=True, bin_method='vanilla', scale=True, solver='NJ',
-    weights=None, ncores=8, metric_kwargs={}, binarization_kwargs={},
-    ):
-
-    # Get solver and solver_kwargs
-    if isinstance(solver, str) and solver in solver_d:
-        _solver = solver_d[solver]
-        print(f'Chosen solver: {solver}')
-    elif isinstance(solver, str) and solver not in solver_d:
-        raise KeyError(f'{solver} solver not available. Choose on in {solver_d}')
-    solver_kwargs = solver_kwargs_d[solver]
-
-    # Get cell and character names
-    if a is not None:
-        if isinstance(a, anndata.AnnData):
-            cells = a.obs_names
-            characters = a.var_names
-        else:
-            raise TypeError('Provide an AnnData as a!')
-    else:
-        if meta is None:
-            raise ValueError('If a is None, provide meta for cell metadata!')
-        else: 
-            cells = meta.index
-            if X is not None:
-                if isinstance(X, pd.DataFrame):
-                    characters = X.columns
-                else:
-                    if var_names is not None:
-                        characters = var_names
-                    else:
-                        characters = [ f'char{i}' for i in range(X.shape[1]) ]
-            elif ((AD is not None) and (DP is not None)):
-                if isinstance(AD, pd.DataFrame):
-                    characters = AD.columns
-                else:
-                    if var_names is not None:
-                        characters = var_names
-                    else:
-                        characters = [ f'char{i}' for i in range(AD.shape[1]) ]
-            else:
-                raise ValueError('Provide valid a, X, AD and DP...')
-            
-    # Prep distance kwargs
-    distance_kwargs = dict(
-        X=X, a=a, AD=AD, DP=DP, D=D, metric=metric, binary=binary, ncores=ncores, metric_kwargs=metric_kwargs,
-        bin_method=bin_method, weights=weights, scale=scale, binarization_kwargs=binarization_kwargs
-    )
-
-    return distance_kwargs, solver_kwargs, _solver, cells, characters
-
-
-##
-
-
-def build_tree(
-    X=None, a=None, AD=None, DP=None, D=None, meta=None, var_names=None,
-    metric='jaccard', binary=True, bin_method='vanilla', 
-    min_n_positive_cells=2, max_frac_positive=.95,
-    scale=True, weights=None, solver='UPMGA', ncores=8, 
-    metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}
-    ):
+def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive):
     """
-    Wrapper for tree building with Cassiopeia distance-based and maximum parsimony solvers.
+    Extract afm slots for CassiopeiaTree instantiation.
     """
-    
-    # Prep inputs
-    kwargs = dict(
-        X=X, a=a, AD=AD, DP=DP, D=D, meta=meta, var_names=var_names, metric=metric, binary=binary, bin_method=bin_method, scale=scale,
-        weights=weights, ncores=ncores, metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs, solver=solver
-    )
-    distance_kwargs, solver_kwargs, _solver, cells, characters = _check_input(**kwargs)
-    X_raw, X, D = compute_distances(verbose=True, return_matrices=True, **distance_kwargs)
+
+    assert 'bin' in afm.layers or 'scaled' in afm.layers
+    assert distance_key in afm.obsp
+
+    layer = 'bin' if 'bin' in afm.layers else 'scaled'
+    D = afm.obsp[distance_key].A.copy()
     D[np.isnan(D)] = 0
-    D = pd.DataFrame(D, index=cells, columns=cells)
-    M_raw = pd.DataFrame(X_raw, index=cells, columns=characters)
-    M = pd.DataFrame(X, index=cells, columns=characters)
+    D = pd.DataFrame(D, index=afm.obs_names, columns=afm.obs_names)
+    M_raw = pd.DataFrame(afm.X.A, index=afm.obs_names, columns=afm.var_names)
+    M = pd.DataFrame(afm.layers[layer].A, index=afm.obs_names, columns=afm.var_names)
 
     # Remove variants from char matrix i) they are called in less than min_n_positive_cells or ii) > max_frac_positive 
     # We avoid recomputing distances as their contribution to the average pairwise cell-cell distance is minimal
@@ -227,68 +162,44 @@ def build_tree(
     M_raw = M_raw.loc[:,test].copy()
     M = M.loc[:,test].copy()
 
-    # Solve cell phylogeny
-    np.random.seed(1234)
-    tree = cs.data.CassiopeiaTree(character_matrix=M, dissimilarity_map=D, cell_meta=meta)
-    solver = _solver(**solver_kwargs)
-    solver.solve(tree)
-
-    # Add layers
-    tree.layers['raw'] = M_raw
-    tree.layers['transformed'] = M
-
-
-    return tree
+    return M_raw, M, D
 
 
 ##
 
 
-def bootstrap_iteration(
-    X=None, a=None, AD=None, DP=None, meta=None,
-    metric='jaccard', binary=True, bin_method='vanilla', scale=True,
-    solver='UPMGA', ncores=8, boot_strategy='jacknife',
+def build_tree(
+    afm, precomputed=False, distance_key='distances', metric='custom_MI_TO_jaccard', 
+    bin_method='MI_TO', solver='NJ', ncores=8, min_n_positive_cells=2, max_frac_positive=.95,
     metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}
     ):
     """
-    One bootstrap iteration.
+    Wrapper around CassiopeiaTree distance-based and maximum parsimony solvers.
     """
-
-    # Tree kwargs
-    tree_kwargs = dict(
-        meta=meta, metric=metric, binary=binary, bin_method=bin_method, scale=scale,
-        solver=solver, ncores=ncores, metric_kwargs=metric_kwargs, 
-        binarization_kwargs=binarization_kwargs, solver_kwargs=solver_kwargs
-    )
-
-    # Bootstrap ch matrix
-    if AD is not None and DP is not None:
-        
-        AD_ = None
-        DP_ = None
-        if boot_strategy == 'jacknife':
-            AD_, DP_, _ = jackknife_allele_tables(ad=AD, dp=DP)
-        elif boot_strategy == 'features_resampling':
-            AD_, DP_, _ = bootstrap_allele_tables(ad=AD, dp=DP)
-        elif boot_strategy == 'counts_resampling':
-            AD_, DP_, _ = bootstrap_allele_counts(AD, DP)
-        else:
-            raise ValueError(f'{boot_strategy} is not supported. Choose one between: jacknife, features_resampling or counts_resampling')
-
-        tree = build_tree(AD=AD_, DP=DP_, **tree_kwargs)
     
-    elif X is not None:
-     
-        if boot_strategy == 'jacknife':
-            X = jackknife_allele_tables(M=X)
-        elif boot_strategy == 'features_resampling':
-            X = bootstrap_allele_tables(M=X)
-        elif boot_strategy == 'counts_resampling':
-            raise ValueError('Pass AD and DP for counts resampling...')
-        else:
-            raise ValueError(f'{boot_strategy} is not supported. Choose one between: jacknife, features_resampling or counts_resampling')
+    # Compute (if necessary, cell-cell distances, and retrieve necessary afm .slots)
+    if precomputed:
+        pass
+    else:
+        compute_distances(
+            afm, distance_key=distance_key, metric=metric, bin_method=bin_method,
+            ncores=ncores, metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs
+        )
+    M_raw, M, D = _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive)
+ 
+    # Solve cell phylogeny
+    logging.info(f'Build tree: metric={metric}, solver={solver}')
+    np.random.seed(1234)
+    tree = cs.data.CassiopeiaTree(character_matrix=M, dissimilarity_map=D, cell_meta=afm.obs)
+    _solver = solver_d[solver]
+    kwargs = _solver_kwargs[solver]
+    kwargs.update(solver_kwargs)
+    solver = _solver(**kwargs)
+    solver.solve(tree)
 
-        tree = build_tree(X=X, **tree_kwargs)
+    # Add layers to CassiopeiaTree
+    tree.layers['raw'] = M_raw
+    tree.layers['transformed'] = M
 
     return tree
 
@@ -479,23 +390,23 @@ def get_expanded_clones(tree, t=.05, min_depth=3, min_clade_size=None):
 ##
 
 
-def AFM_to_seqs(a=None, X_bin=None, bin_method='MI_TO', binarization_kwargs={}):
+def AFM_to_seqs(afm, bin_method='MI_TO', binarization_kwargs={}):
     """
-    Funtion to convert an AFM to a dictionary of sequences.
+    Convert an AFM to a dictionary of sequences.
     """
 
     # Extract ref and alt character sequences
-    L = [ x.split('_')[1].split('>') for x in a.var_names ]
+    L = [ x.split('_')[1].split('>') for x in afm.var_names ]
     ref = ''.join([x[0] for x in L])
     alt = ''.join([x[1] for x in L])
 
-    # Binarize
-    if X_bin is None:
-        X_bin = call_genotypes(a=a, bin_method=bin_method, **binarization_kwargs)
+    if 'bin' not in afm.layers:
+        call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
 
     # Convert to a dict of strings
+    X_bin = afm.layers['bin'].A.copy()
     d = {}
-    for i, cell in enumerate(a.obs_names):
+    for i, cell in enumerate(afm.obs_names):
         m_ = X_bin[i,:]
         seq = []
         for j, char in enumerate(m_):
@@ -635,7 +546,11 @@ def char_compatibility(tree):
     """
     Compute a matrix of pairwise-compatibility scores between characters.
     """
-    return pairwise_distances(tree.character_matrix.T, metric=lambda x, y: _compatibility_metric(x, y), force_all_finite=False)
+    return pairwise_distances(
+        tree.character_matrix.T, 
+        metric=lambda x, y: _compatibility_metric(x, y), 
+        force_all_finite=False
+    )
 
 
 ##
@@ -782,7 +697,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
             silhouette_avg = silhouette_score(D, labels, metric='precomputed')
             measures.append(silhouette_avg)
         n_clones = np.argmax(measures)
-        print(f'Optimal mut_clusters: {n_clones}')
+        logging.info(f'Optimal mut_clusters: {n_clones}')
 
         # fig, ax = plt.subplots(figsize=(4.5,4.5))
         # ax.plot(measures, 'ko')
@@ -792,7 +707,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
         # plt.show()
 
     else:
-        print(f'Target mut_clusters: {n_clones}')
+        logging.info(f'Target mut_clusters: {n_clones}')
 
     # Collapse internal nodes
     distances = L[:,2]
@@ -803,7 +718,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
     np.random.seed(1234)
     mut_clusters = fcluster(L, t=threshold, criterion='distance')
 
-    print(f'Final mut_clusters: {np.unique(mut_clusters).size}')
+    logging.info(f'Final mut_clusters: {np.unique(mut_clusters).size}')
     
     mut_map = { mut : cluster for mut, cluster in zip(tree.character_matrix.columns, mut_clusters)}
     node_assignment['mut_cluster'] = node_assignment['mut'].map(mut_map)
@@ -822,7 +737,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
     tree.cell_meta['MT_clone'] = df_clades.loc[tree.cell_meta.index, 'MT_clone']
     n_clones = tree.cell_meta['MT_clone'].unique().size
     
-    print(f'Final MT_clones: {n_clones}')
+    logging.info(f'Final MT_clones: {n_clones}')
 
     clone_muts = {
         clone : ';'.join(node_assignment.loc[node_assignment['MT_clone']==clone, 'mut'].to_list())
@@ -831,6 +746,61 @@ def cut_and_annotate_tree(tree, n_clones=None):
     tree.cell_meta['clone_muts'] = tree.cell_meta['MT_clone'].map(clone_muts)
 
     return tree, mut_nodes, mutation_order
+
+
+##
+
+
+###################################### Deprecated code
+
+# def bootstrap_iteration(
+#     X=None, a=None, AD=None, DP=None, meta=None,
+#     metric='jaccard', binary=True, bin_method='vanilla', scale=True,
+#     solver='UPMGA', ncores=8, boot_strategy='jacknife',
+#     metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}
+#     ):
+#     """
+#     One bootstrap iteration.
+#     """
+# 
+#     # Tree kwargs
+#     tree_kwargs = dict(
+#         meta=meta, metric=metric, binary=binary, bin_method=bin_method, scale=scale,
+#         solver=solver, ncores=ncores, metric_kwargs=metric_kwargs, 
+#         binarization_kwargs=binarization_kwargs, solver_kwargs=solver_kwargs
+#     )
+# 
+#     # Bootstrap ch matrix
+#     if AD is not None and DP is not None:
+#         
+#         AD_ = None
+#         DP_ = None
+#         if boot_strategy == 'jacknife':
+#             AD_, DP_, _ = jackknife_allele_tables(ad=AD, dp=DP)
+#         elif boot_strategy == 'features_resampling':
+#             AD_, DP_, _ = bootstrap_allele_tables(ad=AD, dp=DP)
+#         elif boot_strategy == 'counts_resampling':
+#             AD_, DP_, _ = bootstrap_allele_counts(AD, DP)
+#         else:
+#             raise ValueError(f'{boot_strategy} is not supported. Choose one between: jacknife, features_resampling or counts_resampling')
+# 
+#         tree = build_tree(AD=AD_, DP=DP_, **tree_kwargs)
+#     
+#     elif X is not None:
+#      
+#         if boot_strategy == 'jacknife':
+#             X = jackknife_allele_tables(M=X)
+#         elif boot_strategy == 'features_resampling':
+#             X = bootstrap_allele_tables(M=X)
+#         elif boot_strategy == 'counts_resampling':
+#             raise ValueError('Pass AD and DP for counts resampling...')
+#         else:
+#             raise ValueError(f'{boot_strategy} is not supported. Choose one between: jacknife, features_resampling or counts_resampling')
+# 
+#         tree = build_tree(X=X, **tree_kwargs)
+# 
+#     return tree
+
 
 
 ##
