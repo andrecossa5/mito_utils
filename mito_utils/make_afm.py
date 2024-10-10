@@ -35,17 +35,29 @@ def mask_mt_sites(site_list):
 ##
 
 
-def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell_col='cell', char_col='MUT'):
+def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell_col='cell'):
     """
     Create AFM as as AnnData object from a path_ch_matrix folder with AD, DP tables. AD and DP columns must have:
     1) <cell_col> column; 2) <char> column; 3) AD/DP columns, respectively.
     N.B. <char> columns must be formatted in "pos>_ref>alt" fashion and cell_meta index must be in {CB}_{sample} format.
+
+    Example file input:
+
+    ,CHROM,POS,ID,REF,ALT,AD,DP,cell
+    4,chrM,1438,.,A,G,19,19,GTGCACGTCCATCTGC
+    5,chrM,1719,.,G,A,17,17,GTGCACGTCCATCTGC
+    6,chrM,2706,.,A,G,19,19,GTGCACGTCCATCTGC
+    8,chrM,6221,.,T,C,10,10,GTGCACGTCCATCTGC
+    9,chrM,6371,.,C,T,16,16,GTGCACGTCCATCTGC
+    ...
+
     """
 
     table = pd.read_csv(os.path.join(path_ch_matrix, 'allele_table.csv.gz'), index_col=0)
     cell_meta = pd.read_csv(path_meta, index_col=0)
-    AD = table.pivot(index=cell_col, columns=char_col, values='AD').fillna(0)
-    DP = table.pivot(index=cell_col, columns=char_col, values='DP').fillna(0)
+    table['MUT'] = table['POS'].astype(str) + '_' + table['REF'] + '>' + table['ALT']
+    AD = table.pivot(index=cell_col, columns='MUT', values='AD').fillna(0)
+    DP = table.pivot(index=cell_col, columns='MUT', values='DP').fillna(0)
 
     cells = list(set(cell_meta.index) & set(DP.index))
     AD = AD.loc[cells].copy()
