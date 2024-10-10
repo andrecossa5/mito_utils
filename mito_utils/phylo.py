@@ -179,7 +179,9 @@ def build_tree(
     
     # Compute (if necessary, cell-cell distances, and retrieve necessary afm .slots)
     if precomputed:
-        pass
+        if distance_key in afm.obsp:
+            if metric == afm.uns['distance_calculations'][distance_key]['metric']:
+                pass
     else:
         compute_distances(
             afm, distance_key=distance_key, metric=metric, bin_method=bin_method,
@@ -188,6 +190,7 @@ def build_tree(
     M_raw, M, D = _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive)
  
     # Solve cell phylogeny
+    metric = afm.uns['distance_calculations'][distance_key]['metric']
     logging.info(f'Build tree: metric={metric}, solver={solver}')
     np.random.seed(1234)
     tree = cs.data.CassiopeiaTree(character_matrix=M, dissimilarity_map=D, cell_meta=afm.obs)

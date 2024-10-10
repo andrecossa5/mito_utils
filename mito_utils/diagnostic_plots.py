@@ -14,23 +14,17 @@ from mito_utils.plotting_base import *
 
 
 # Current diagnosti plots
-def vars_AF_dist(afm, ax=None, color='b', title=None, **kwargs):
+def vars_AF_dist(afm, ax=None, color='b', **kwargs):
     """
     Ranked AF distributions (VG-like).
     """
-    to_plot = afm.X.copy()
-    to_plot[np.isnan(to_plot)] = 0
-
-    for i in range(to_plot.shape[1]):
-        x = to_plot[:, i]
+    X = afm.X.A
+    for i in range(X.shape[1]):
+        x = X[:,i]
         x = np.sort(x)
         ax.plot(x, '-', color=color, **kwargs)
 
-    if title is None:
-        t = 'Ranked AF distributions, per variant'
-    else:
-        t = title
-    format_ax(ax=ax, title=t, xlabel='Cells (ranked)', ylabel='Allelic Frequency (AF)')
+    format_ax(ax=ax, xlabel='Cells (ranked)', ylabel='Allelic Frequency (AF)')
 
     return ax
 
@@ -44,30 +38,19 @@ def plot_ncells_nAD(afm, ax=None, title=None, xticks=None, yticks=None, s=5, c='
     n+ cells vs n 
     """
 
-    afm = filter_baseline(afm)
-    var_sites = afm.var_names.map(lambda x: x.split('_')[0])
-    test = var_sites.value_counts()[var_sites]==1
-    afm = afm[:,afm.var_names[test]].copy()
-    afm = filter_sites(afm)
-    vars_df = make_vars_df(afm)
-    af_confident_detection = .0
-    AD, _, _ = get_AD_DP(afm)
-    assert AD.A.T.shape == afm.shape
-    x = np.nanmean(np.where(afm.X>af_confident_detection, AD.A.T, np.nan), axis=0)
-    x[np.isnan(x)] = 0
-    vars_df['mean_AD_in_confident'] = x
+    annotate_vars(afm, overwrite=True)
 
-    ax.plot(vars_df['Variant_CellN'], vars_df['mean_AD_in_confident'], 'o', c=c, alpha=.2, markersize=s)
+    ax.plot(afm.var['Variant_CellN'], afm.var['mean_AD_in_positives'], 'o', c=c, alpha=.2, markersize=s)
     ax.set_yscale('log', base=2)
     ax.set_xscale('log', base=2)
-    xticks = [1,2,5,10,20,40,80,160,320,640] if xticks is None else xticks
-    yticks = [1,2,4,8,16,32,64,132,264] if yticks is None else yticks
+    xticks = [0,1,2,5,10,20,40,80,160,320,640] if xticks is None else xticks
+    yticks = [0,1,2,4,8,16,32,64,132,264] if yticks is None else yticks
     ax.xaxis.set_major_locator(FixedLocator(xticks))
     ax.yaxis.set_major_locator(FixedLocator(yticks))
 
     def integer_formatter(val, pos):
         return f'{int(val)}'
-
+    
     ax.xaxis.set_major_formatter(FuncFormatter(integer_formatter))
     ax.yaxis.set_major_formatter(FuncFormatter(integer_formatter))
     ax.set(xlabel='n +cells', ylabel='Mean n ALT UMI / +cell', title='' if title is None else title)

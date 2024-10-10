@@ -188,7 +188,7 @@ def find_n_rows_n_cols(n_axes, n_cols=None):
 
 
 def format_ax(ax, title='', xlabel='', ylabel='', 
-    xticks=None, yticks=None, rotx=0, roty=0, 
+    xticks=None, yticks=None, rotx=0, roty=0, axis=True,
     xlabel_size=None, ylabel_size=None, xticks_size=None, 
     yticks_size=None, title_size=None, log=False, reduced_spines=False
     ):
@@ -225,6 +225,9 @@ def format_ax(ax, title='', xlabel='', ylabel='',
     
     if reduced_spines:
         ax.spines[['right', 'top']].set_visible(False)
+    
+    if not axis:
+        ax.axis('off')
 
     return ax
 

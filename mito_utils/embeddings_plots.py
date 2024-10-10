@@ -34,7 +34,7 @@ def format_draw_embeddings(
 
     if axes_params['only_labels']:
         remove_ticks(ax)
-    elif axes_params['no_axis']:
+    if not axes_params['axis']:
         ax.axis('off')
     
     if axes_params['legend'] and cat is not None:
@@ -43,7 +43,7 @@ def format_draw_embeddings(
         add_legend(ax=ax, **legend_params)
     
     elif axes_params['cbar'] and cont is not None:
-        add_cbar(df[cont], label=cont, ax=ax, **cbar_params)
+        add_cbar(df[cont], ax=ax, **cbar_params)
 
     return ax
 
@@ -96,7 +96,8 @@ def draw_embeddings(
         'vmax':None,
         'label_size' : 8, 
         'ticks_size' : 6,  
-        'layout' : 'outside'
+        'layout' : 'outside',
+        'label' : None
     }
 
     legend_params={
@@ -110,7 +111,7 @@ def draw_embeddings(
 
     axes_params = {
         'only_labels' : True,
-        'no_axis' : False, 
+        'axis' : False, 
         'legend' : True,
         'cbar' : True,
         'title_size' : 10
@@ -172,6 +173,8 @@ def draw_embeddings(
 
     else:
         raise ValueError('Specifiy either a categorical or a continuous covariate for plotting.')
+    
+    ax.axis('off')
 
     return ax
 

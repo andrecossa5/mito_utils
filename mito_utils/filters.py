@@ -206,7 +206,7 @@ def filter_miller2022(afm, min_site_cov=100, min_var_quality=30, p1=1, p2=99, pe
 ##
 
 
-def fit_MQuad_mixtures(afm, n_top=25, path_=None, nproc=8, minDP=10, minAD=1, with_M=False):
+def fit_MQuad_mixtures(afm, n_top=25, path_=None, ncores=8, minDP=10, minAD=1, with_M=False):
     """
     Filter variants using the Mquad method.
     """
@@ -217,7 +217,7 @@ def fit_MQuad_mixtures(afm, n_top=25, path_=None, nproc=8, minDP=10, minAD=1, wi
     # Fit models
     M = Mquad(AD=afm.layers['AD'].T, DP=afm.layers['DP'].T)
     path_ = os.getcwd() if path_ is None else path_
-    df = M.fit_deltaBIC(out_dir=path_, nproc=nproc, minDP=minDP, minAD=minAD)
+    df = M.fit_deltaBIC(out_dir=path_, nproc=ncores, minDP=minDP, minAD=minAD)
     df.index = afm.var_names
     df['deltaBIC_rank'] = df['deltaBIC'].rank(ascending=False)
 

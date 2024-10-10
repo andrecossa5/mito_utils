@@ -220,15 +220,19 @@ def compute_distances(
     Returns:
         Updates inplace .obsp slot in afm AnnData with key 'distances'.
     """
+    
     preprocess_feature_matrix(
         afm, distance_key=distance_key, metric=metric, 
         bin_method=bin_method, binarization_kwargs=binarization_kwargs
     )
+
     layer, metric = _get_metric_and_layer(afm, distance_key)
     X = afm.layers[layer].A.copy()
+
+    logging.info(f'Compute distances: ncores={ncores}')
     D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False, **metric_kwargs)
     afm.obsp[distance_key] = csr_matrix(D)
-
+    
     afm.uns['distance_calculations'][distance_key].update(metric_kwargs)
     
 

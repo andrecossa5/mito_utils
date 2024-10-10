@@ -38,7 +38,7 @@ def nans_as_zeros(afm):
 
 
 def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5, 
-                mean_cov_all=25, median_cov_target=30, min_perc_covered_sites=.75):
+                mean_cov_all=20, median_cov_target=25, min_perc_covered_sites=.75):
     """
 
     Read and format a complete Allele Frequency Matrix (follows the logic of Miller et al., 2022). 
@@ -50,8 +50,8 @@ def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5,
             1. **'filter1'**: Filter cells based on mean MT-genome coverage (all sites).
             2. **'filter2'**: Filter cells based on median target MT-sites coverage and min % of target sites covered.
         nmads (int, optional): n Minimum Absolute Deviations to filter cells with high MT-library UMI counts. Defaults to 5.
-        mean_coverage (int, optional): minimum mean consensus (at least 3-supporting-reads) UMI coverage across MT-genome, per cell. Defaults to 25.
-        median_cov_target (int, optional): minimum median UMI coverage at target MT-sites. Defaults to 30.
+        mean_coverage (int, optional): minimum mean consensus (at least 3-supporting-reads) UMI coverage across MT-genome, per cell. Defaults to 20.
+        median_cov_target (int, optional): minimum median UMI coverage at target MT-sites. Defaults to 25.
         min_perc_covered_sites (float, optional): minimum fraction of MT target sites covered. Defaults to .75.
 
     Returns:
@@ -209,12 +209,14 @@ def compute_metrics_filtered(afm, spatial_metrics=True,
 
         # Baseline tree internal nodes mutations support
         tree = build_tree(afm, bin_method=bin_method, binarization_kwargs=binarization_kwargs, **tree_kwargs)
-        tree_collapsed = tree.copy()
-        tree_collapsed.collapse_mutationless_edges(True)
-        d['frac_supported_nodes'] = len(tree_collapsed.internal_nodes) / len(tree.internal_nodes)
+        # tree_collapsed = tree.copy()
+        # tree_collapsed.collapse_mutationless_edges(True)
+        # d['frac_supported_nodes'] = len(tree_collapsed.internal_nodes) / len(tree.internal_nodes)
 
     # To .uns
     afm.uns['dataset_metrics'].update(d)
+
+    return tree
 
 
 ##
@@ -224,8 +226,8 @@ def filter_afm(
     afm, lineage_column=None, min_cell_number=0, cells=None,
     filtering='MI_TO', filtering_kwargs={}, max_AD_counts=1, variants=None,
     fit_mixtures=False, only_positive_deltaBIC=False, path_dbSNP=None, path_REDIdb=None, 
-    compute_enrichment=False, bin_method='MI_TO', binarization_kwargs={},
-    spatial_metrics=False, tree_kwargs={}, nproc=8
+    compute_enrichment=False, bin_method='MI_TO', binarization_kwargs={}, ncores=8,
+    spatial_metrics=False, tree_kwargs={}, nproc=8, return_tree=False
     ):
     """
     
@@ -301,12 +303,12 @@ def filter_afm(
         If `True`, compute a list of "spatial" metrics for retained MT-SNVs, including [details missing]. Default is `False`.
     tree_kwargs : dict, optional
         Tree building keyword arguments that can be passed to `mito_utils.phylo.build_tree` when `spatial_metrics=True`. Default is `{}`.
-    nproc : int, optional
-        Number of cores to use by `mito_utils.phylo.build_tree` and `sklearn.metrics.pairwise_distances` when `spatial_metrics=True`. Default is `8`.
     fit_mixtures : bool, optional
         If `True`, fit MQuad (Kwock et al., 2022) binomial mixtures and calculate each variant's (passing baseline filters) delta BIC. Default is `False`.
     only_positive_deltaBIC : bool, optional
-        Site/variant filter. Irrespective of the filtering strategy, retain only variants with positive delta BIC (estimated with MQuad). Default is `False`.
+        Site/variant filter. Irrespective of the filtering strategy, retain only variants with positive delta BIC (estimated with MQuad). Default is `False`.  
+    ncores: int, optional
+        n cores to use for distance computations and fit_MQuad mixtures, if necessary. Default: 8
     path_dbSNP : str, optional
         Path to a `.txt` tab-separated file with MT-SNVs "COMMON" variants from the dbSNP database. Required fields: `'pos'`, `'ALT'`, `'REF'`. All of these variants will be discarded from the final dataset. Can be found at `<path_main from zenodo folder>/data/MI_TO_bench/miscellanea`. Default is `None`.
     path_REDIdb : str, optional
@@ -317,6 +319,8 @@ def filter_afm(
         Binarization strategy used for i) compute the final dataset statistics (i.e., mutation number, connectivity ecc) and ii) lineage enrichment. Default is `MI_TO`
     binarization_kwargs : dict, optional
         Binarization strategy **kwargs (see mito_utils.distances.call_genotypes). Default is `{}`
+    return_tree : boll, optional
+        Wheter to return the tree usen in spatial metrics.
 
     Returns
     -------
@@ -410,7 +414,7 @@ def filter_afm(
  
     # Bimodal mixture modelling: deltaBIC (MQuad-like)
     if fit_mixtures:
-        afm.var = afm.var.join(fit_MQuad_mixtures(afm).dropna()[['deltaBIC']])
+        afm.var = afm.var.join(fit_MQuad_mixtures(afm, ncores=ncores).dropna()[['deltaBIC']])
  
     # Last (optional filters):
     if fit_mixtures and only_positive_deltaBIC:
@@ -436,7 +440,8 @@ def filter_afm(
 
     # Last dataset stats 
     logging.info(f'Add last metrics')
-    compute_metrics_filtered(
+    tree_kwargs.update({'ncores':ncores})
+    tree = compute_metrics_filtered(
         afm, 
         spatial_metrics=spatial_metrics, 
         tree_kwargs=tree_kwargs,
@@ -454,7 +459,10 @@ def filter_afm(
         'spatial_metrics' : spatial_metrics
     }
     
-    return afm
+    if return_tree:
+        return afm, tree
+    else:
+        return afm
 
 
 ##

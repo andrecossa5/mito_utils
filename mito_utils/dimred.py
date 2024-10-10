@@ -112,7 +112,7 @@ def _get_D(afm, distance_key, **kwargs):
 
 
 def reduce_dimensions(
-    afm, layer='bin', distance_key='distances', seed=1234, method='UMAP', k=15, n_comps=30, ncores=8,
+    afm, layer='bin', distance_key='distances', seed=1234, method='UMAP', k=15, n_comps=2, ncores=8,
     metric='custom_MI_TO_jaccard', bin_method='MI_TO', metric_kwargs={}, binarization_kwargs={}
     ):
     """
