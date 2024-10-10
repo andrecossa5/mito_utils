@@ -42,11 +42,10 @@ def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell
     N.B. <char> columns must be formatted in "pos>_ref>alt" fashion and cell_meta index must be in {CB}_{sample} format.
     """
 
-    AD = pd.read_csv(os.path.join(path_ch_matrix, 'AD.csv.gz'), index_col=0)
-    DP = pd.read_csv(os.path.join(path_ch_matrix, 'DP.csv.gz'), index_col=0)
+    table = pd.read_csv(os.path.join(path_ch_matrix, 'allele_table.csv.gz'), index_col=0)
     cell_meta = pd.read_csv(path_meta, index_col=0)
-    AD = AD.pivot(index=cell_col, columns=char_col, values='AD').fillna(0)
-    DP = DP.pivot(index=cell_col, columns=char_col, values='DP').fillna(0)
+    AD = table.pivot(index=cell_col, columns=char_col, values='AD').fillna(0)
+    DP = table.pivot(index=cell_col, columns=char_col, values='DP').fillna(0)
 
     cells = list(set(cell_meta.index) & set(DP.index))
     AD = AD.loc[cells].copy()
