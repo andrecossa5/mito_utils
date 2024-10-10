@@ -55,6 +55,7 @@ def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell
 
     table = pd.read_csv(os.path.join(path_ch_matrix, 'allele_table.csv.gz'), index_col=0)
     cell_meta = pd.read_csv(path_meta, index_col=0)
+    table['cell'] = table['cell'].map(lambda x: f'{x}_{sample}')
     table['MUT'] = table['POS'].astype(str) + '_' + table['REF'] + '>' + table['ALT']
     AD = table.pivot(index=cell_col, columns='MUT', values='AD').fillna(0)
     DP = table.pivot(index=cell_col, columns='MUT', values='DP').fillna(0)
