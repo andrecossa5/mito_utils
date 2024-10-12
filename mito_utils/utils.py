@@ -208,38 +208,6 @@ def process_kwargs(path, key):
 ##
 
 
-def traverse_and_extract_flat(base_dir, file_name='annotated_tree.pickle'):
-
-    result = {}
-    for root, _, files in os.walk(base_dir):
-        for file in files:
-            if file == file_name:
-                full_path = os.path.join(root, file)
-                
-                # Determine the file extension and load accordingly
-                if file_name.endswith('.pickle'):
-                    with open(full_path, 'rb') as f:
-                        data = pickle.load(f)
-                elif file_name.endswith('.csv'):
-                    data = pd.read_csv(full_path, index_col=0)
-                elif file_name.endswith('.txt.gz'):
-                    data = pd.read_csv(full_path, index_col=0, header=None)
-                else:
-                    raise ValueError(f"Unsupported file type: {file_name}")
-
-                # Extracting the relevant folder parts
-                relative_path = os.path.relpath(root, base_dir)
-                folder_parts = tuple(relative_path.split(os.sep))
-                
-                # Using tuple of folder parts as the key
-                result[folder_parts] = data
-
-    return result
-
-
-##
-
-
 def generate_job_id(id_length=20):
 
     characters = string.ascii_letters + string.digits  # All uppercase, lowercase letters, and digits
@@ -252,33 +220,51 @@ def generate_job_id(id_length=20):
 ##
 
 
-def get_metrics(path, metric_pattern=None):
-    """
-    Retrieve metrics df.
-    """
-    L = []
-    for folder,_,files in os.walk(path):
-        for file in files:
-            if bool(re.search(metric_pattern, file)): 
-                sample = folder.split('/')[-2]
-                job_id = folder.split('/')[-1]
-                df = pd.read_csv(os.path.join(folder,file), index_col=0).assign(sample=sample)
-                if 'job_id' not in df.columns:
-                    df = df.assign(job_id=job_id)
-                df = df.rename(columns={'value':'metric_value'})
-                L.append(df)
-    df_metrics = pd.concat(L)
+def extract_one_dict(path, sample, job_id):
 
-    L = []
-    for folder,_,files in os.walk(path):
-        for file in files:
-            if bool(re.search('ops', file)): 
-                df = pd.read_csv(os.path.join(folder,file), index_col=0)
-                df = df.rename(columns={'value':'option_value'})
-                L.append(df)
-    df_ops = pd.concat(L).pivot(index='job_id', columns='option', values='option_value').reset_index()
+    with open(path, 'rb') as f:
+        d = pickle.load(f)
 
-    df = df_metrics.merge(df_ops, on='job_id')
+    options = {
+        **{'pp_method':d['pp_method']},
+        **d['cell_filter'],
+        **d['genotyping'],
+        **d['distance_calculations']['distances'],
+        **d['char_filter']
+    }
+    metrics = {
+        **d['raw_basecalls_metrics'],
+        **d['dataset_metrics'],
+        **{'corr':d['corr_dist'][0]},
+        **d['lineage_metrics']
+    }
+
+    df_options = pd.Series(options).to_frame('value').T.assign(sample=sample, job_id=job_id)
+    df_metrics = pd.Series(metrics).to_frame('value').reset_index(names=['metric']).assign(sample=sample, job_id=job_id)
+
+    return df_options, df_metrics
+
+
+
+def format_results(path_results):
+
+    options = []
+    metrics = []
+
+    for folder, _, files in os.walk(path_results):
+        for file in files:
+            sample = folder.split('/')[-1]
+            job_id = file.split('_')[0]
+            try:
+                df_options, df_metrics = extract_one_dict(os.path.join(folder, file), sample, job_id)
+            except:
+                pass
+            options.append(df_options)
+            metrics.append(df_metrics)
+
+
+    df = pd.concat(metrics).merge(pd.concat(options).reset_index(drop=True), on=['sample', 'job_id'])
+    df = df.rename(columns={'metric_x':'metric', 'metrix_y':'distance_metric'})
 
     return df
 

@@ -458,6 +458,7 @@ def filter_afm(
         'compute_enrichment' : compute_enrichment,
         'spatial_metrics' : spatial_metrics
     }
+    afm.uns['char_filter'].update(filtering_kwargs)
     
     if return_tree:
         return afm, tree
