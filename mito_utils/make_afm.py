@@ -68,7 +68,6 @@ def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell
     assert (AD.index == DP.index).all()
     assert (AD.index == cell_meta.index).all()
 
-    cell_meta = AD.index.to_series().to_frame().assign(sample=sample)[['sample']]
     char_meta = DP.columns.to_series().to_frame('mut')
     char_meta['pos'] = char_meta['mut'].map(lambda x: int(x.split('_')[0]))
     char_meta['ref'] = char_meta['mut'].map(lambda x: x.split('_')[1].split('>')[0])
@@ -99,7 +98,7 @@ def read_from_cellsnp(path_ch_matrix, path_meta, sample=None, pp_method='cellsnp
     """
 
     path_AD = os.path.join(path_ch_matrix, 'cellSNP.tag.AD.mtx.gz')
-    path_DP = os.path.join(path_ch_matrix, 'cellSNP.tag.AD.mtx.gz')
+    path_DP = os.path.join(path_ch_matrix, 'cellSNP.tag.DP.mtx.gz')
     path_vcf = os.path.join(path_ch_matrix, 'cellSNP.base.vcf.gz')
     path_cells = os.path.join(path_ch_matrix, 'cellSNP.samples.tsv.gz')
 
@@ -118,12 +117,12 @@ def read_from_cellsnp(path_ch_matrix, path_meta, sample=None, pp_method='cellsnp
     assert (AD.index == DP.index).all()
     assert (AD.index == cell_meta.index).all()
 
-    cell_meta = AD.index.to_series().to_frame().assign(sample=sample)[['sample']]
     char_meta = DP.columns.to_series().to_frame('mut')
     char_meta['pos'] = char_meta['mut'].map(lambda x: int(x.split('_')[0]))
     char_meta['ref'] = char_meta['mut'].map(lambda x: x.split('_')[1].split('>')[0])
     char_meta['alt'] = char_meta['mut'].map(lambda x: x.split('_')[1].split('>')[1])
     char_meta = char_meta[['pos', 'ref', 'alt']]
+
     AF = csr_matrix(np.divide(AD,(DP+.00000001)).values.astype(np.float32))
     AD = csr_matrix(AD.values).astype(np.int16)
     DP = csr_matrix(DP.values).astype(np.int16)
@@ -131,7 +130,6 @@ def read_from_cellsnp(path_ch_matrix, path_meta, sample=None, pp_method='cellsnp
     afm = AnnData(X=AF, obs=cell_meta, var=char_meta, layers={'AD':AD, 'DP':DP}, uns={'pp_method':pp_method})
     sorted_vars = afm.var['pos'].sort_values().index
     afm = afm[:,sorted_vars].copy()
-
 
     return afm
 

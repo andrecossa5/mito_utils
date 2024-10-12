@@ -106,8 +106,12 @@ def annotate_vars(afm, overwrite=False):
     #                    quality = qual.num)
 
     afm.var['mean_af'] = afm.X.A.mean(axis=0)
-    afm.var['mean_cov'] = afm.layers['site_coverage'].A.mean(axis=0)
-    afm.var['quality'] = np.nanmean(np.where(afm.layers['qual'].A>0, afm.layers['qual'].A, np.nan), axis=0)
+
+    if 'site_coverage' in afm.var.columns:
+        afm.var['mean_cov'] = afm.layers['site_coverage'].A.mean(axis=0)
+        afm.var['quality'] = np.nanmean(np.where(afm.layers['qual'].A>0, afm.layers['qual'].A, np.nan), axis=0)
+    else:
+        pass
 
     # Calculate the number of cells that exceed VAF thresholds 0, 1, 5, 10, 50 as in Weng et al., 2024
 
@@ -152,12 +156,15 @@ def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, o
         afm = afm[:,test_sites].copy()
 
     # Basic filter as in Weng et al., 2024
-    test_baseline = (
-        (afm.var['mean_cov']>=min_site_cov) & \
-        (afm.var['quality']>=min_var_quality) & \
-        (afm.var['Variant_CellN']>=min_n_positive) 
-    )
-    afm = afm[:,test_baseline].copy()
+    if afm.uns['pp_method'] in ['mito_preprocessing', 'maegatk']:
+        test_baseline = (
+            (afm.var['mean_cov']>=min_site_cov) & \
+            (afm.var['quality']>=min_var_quality) & \
+            (afm.var['Variant_CellN']>=min_n_positive) 
+        )
+        afm = afm[:,test_baseline].copy()
+    else:
+        logging.info('Baseline filter only exlcudes MT-SNVs in un-targeted sites, and the ones with >1 ALT allele observed.')
 
     # Exclude sites with more than one alt alleles observed
     var_sites = afm.var_names.map(lambda x: x.split('_')[0])
@@ -230,13 +237,13 @@ def fit_MQuad_mixtures(afm, n_top=25, path_=None, ncores=8, minDP=10, minAD=1, w
 ##
 
 
-def filter_MQuad(afm, nproc=8, minDP=10, minAD=1, minCell=3, path_=None, n_top=None):
+def filter_MQuad(afm, ncores=8, minDP=10, minAD=1, minCell=3, path_=None, n_top=None):
     """
     Filter variants using the MQuad (Kwock 2022 et al.,) method.
     """
 
     _, M = fit_MQuad_mixtures(
-        afm, n_top=n_top, path_=path_, nproc=nproc, minDP=minDP, minAD=minAD, with_M=True
+        afm, n_top=n_top, path_=path_, ncores=ncores, minDP=minDP, minAD=minAD, with_M=True
     )
     _, _ = M.selectInformativeVariants(
         min_cells=minCell, out_dir=path_, tenx_cutoff=None,

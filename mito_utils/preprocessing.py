@@ -77,7 +77,12 @@ def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5,
         afm = afm[(test1) & (test2),:].copy()                                  
         logging.info(f'Filtered cells (i.e., median target MT-genome coverage >={median_cov_target} and fraction covered sites >={min_perc_covered_sites}: {afm.shape[0]}')
 
-    else:
+    elif cell_filter == 'filter3':
+        test = np.mean(afm.layers['DP'].A, axis=1)>=20
+        afm = afm[test,:].copy()                                  
+        logging.info(f'Filtered cells (i.e., mean DP {mean_cov_all}): {afm.shape[0]}')
+    
+    elif cell_filter == 'no filter':
         pass
 
     afm.uns['cell_filter'] = {
@@ -102,15 +107,20 @@ def compute_metrics_raw(afm):
     """
     Compute raw dataset metrics and update .uns.
     """
+
     d = {}
+    pp_method = afm.uns['pp_method']
     
-    d['median_site_cov'] = afm.obs['median_target_site_coverage'].median()
-    d['median_target/untarget_coverage_logratio'] = np.median(
-        np.log10(
-            afm.obs['median_target_site_coverage'] / \
-            (afm.obs['median_untarget_site_coverage']+0.000001)
-        )
-    ).round(2)
+    if pp_method in ['mito_preprocessing', 'maegatk']:
+        d['median_site_cov'] = afm.obs['median_target_site_coverage'].median()
+        d['median_target/untarget_coverage_logratio'] = np.median(
+            np.log10(
+                afm.obs['median_target_site_coverage'] / \
+                (afm.obs['median_untarget_site_coverage']+0.000001)
+            )
+        ).round(2)
+    else:
+        logging.info(f'Skip general metrics for pp_method {pp_method}.')
 
     afm.uns['dataset_metrics'] = d
 
@@ -198,6 +208,7 @@ def compute_metrics_filtered(afm, spatial_metrics=True,
     ])
 
     # Spatial metrics
+    tree = None
     if spatial_metrics:
         
         # Cell connectedness
@@ -335,6 +346,8 @@ def filter_afm(
     annotate_vars(afm)
 
     logging.info(f'Filter MT-SNVs...')
+    pp_method = afm.uns['pp_method']
+    
     if filtering in filtering_options:
 
         logging.info(f'Feature selection method: {filtering}')
@@ -348,21 +361,35 @@ def filter_afm(
         afm = filter_baseline(afm)
         logging.info(f'afm after baseline filter: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
 
-        if filtering == 'baseline':
-            pass
-        if filtering == 'CV':
-            afm = filter_CV(afm, **filtering_kwargs)
-        elif filtering == 'miller2022':
-            afm = filter_miller2022(afm, **filtering_kwargs)
-        elif filtering == 'weng2024':
-            afm = filter_weng2024(afm, **filtering_kwargs)
-        elif filtering == 'MQuad':
-            afm = filter_MQuad(afm, nproc=nproc, path_=os.getcwd(), **filtering_kwargs)
-        elif filtering == 'MI_TO':
-            afm = filter_MI_TO(afm, **filtering_kwargs)
-        elif filtering == 'GT_enriched':
-            afm = filter_GT_enriched(afm, lineage_column=lineage_column, **filtering_kwargs)
+        test_pp = pp_method in ['maegatk', 'mito_preprocessing']
 
+        if filtering == 'baseline' and test_pp:
+            pass
+        if filtering == 'CV' and test_pp:
+            afm = filter_CV(afm, **filtering_kwargs)
+        elif filtering == 'miller2022' and test_pp:
+            afm = filter_miller2022(afm, **filtering_kwargs)
+        elif filtering == 'weng2024' and test_pp:
+            afm = filter_weng2024(afm, **filtering_kwargs)
+        elif filtering == 'MQuad' and (test_pp or pp_method == 'cellsnp-lite'):
+            afm = filter_MQuad(afm, ncores=ncores, path_=os.getcwd(), **filtering_kwargs)
+        elif filtering == 'MI_TO' and test_pp:
+            afm = filter_MI_TO(afm, **filtering_kwargs)
+        elif filtering == 'GT_enriched' and test_pp:
+            afm = filter_GT_enriched(afm, lineage_column=lineage_column, **filtering_kwargs)
+        else:
+            raise ValueError(
+                f'''The provided filtering method {filtering} is not supported for pp_method {pp_method}
+                    Choose another one...'''
+            )
+
+    elif pp_method in ['samtools', 'freebayes', 'cellsnp-lite'] and filtering is None:
+        
+        rows = cells if cells is not None else afm.obs_names 
+        cols = variants if variants is not None else afm.var_names 
+        afm = afm[rows,cols].copy()
+        logging.info(f'No further filter applied after baseline.')
+    
     elif cells is not None or variants is not None:
         
         logging.info(f'Filtering custom sets of cells and variants')
@@ -377,28 +404,28 @@ def filter_afm(
                     Choose another one...'''
             )
 
-    logging.info(f'Filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
-
-    # Filter common SNVs and possible RNA-editsz
+    # Filter common SNVs and possible RNA-edits
+    n_dbSNP = np.nan
     if path_dbSNP is not None:
         if os.path.exists(path_dbSNP):
             common = pd.read_csv(path_dbSNP, index_col=0, sep='\t')
             common = common['pos'].astype('str') + '_' + common['REF'] + '>' + common['ALT'].map(lambda x: x.split('|')[0])
             common = common.to_list()
-            n_suspects = afm.var_names.isin(common).sum()
-            logging.info(f'Exclude {n_suspects} common SNVs events (dbSNP)')
+            n_dbSNP = afm.var_names.isin(common).sum()
+            logging.info(f'Exclude {n_dbSNP} common SNVs events (dbSNP)')
             variants = afm.var_names[~afm.var_names.isin(common)]
             afm = afm[:,variants].copy() 
 
-    # Filter possible RNA-edits       
+    # Filter possible RNA-edits  
+    n_REDIdb = np.nan     
     if path_REDIdb is not None:
         if os.path.exists(path_REDIdb):
             edits = pd.read_csv(path_REDIdb, index_col=0, sep='\t')
             edits = edits.query('nSamples>100')
             edits = edits['Position'].astype('str') + '_' + edits['Ref'] + '>' + edits['Ed']
             edits = edits.to_list()
-            n_suspects = afm.var_names.isin(edits).sum()
-            logging.info(f'Exclude {n_suspects} common RNA editing events (REDIdb)')
+            n_REDIdb = afm.var_names.isin(edits).sum()
+            logging.info(f'Exclude {n_REDIdb} common RNA editing events (REDIdb)')
             variants = afm.var_names[~afm.var_names.isin(edits)]
             afm = afm[:,variants].copy()
 
@@ -425,7 +452,7 @@ def filter_afm(
     # Final fixes
     call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
     afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>0,:]
-    logging.info(f'Last filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
+    logging.info(f'Last optional filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
     
     # Lineage bias
     if lineage_column in afm.obs.columns and compute_enrichment:
@@ -456,7 +483,9 @@ def filter_afm(
         'filtering' : filtering if (cells is not None) or (variants is not None) else 'predefined_sets',
         'only_positive_deltaBIC' : only_positive_deltaBIC,
         'compute_enrichment' : compute_enrichment,
-        'spatial_metrics' : spatial_metrics
+        'spatial_metrics' : spatial_metrics,
+        'n_dbSNP' : n_dbSNP,
+        'n_REDIdb' : n_REDIdb,
     }
     afm.uns['char_filter'].update(filtering_kwargs)
     
