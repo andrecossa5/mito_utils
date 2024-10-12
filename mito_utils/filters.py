@@ -107,11 +107,11 @@ def annotate_vars(afm, overwrite=False):
 
     afm.var['mean_af'] = afm.X.A.mean(axis=0)
 
-    if 'site_coverage' in afm.var.columns:
+    if 'site_coverage' in afm.layers:
         afm.var['mean_cov'] = afm.layers['site_coverage'].A.mean(axis=0)
         afm.var['quality'] = np.nanmean(np.where(afm.layers['qual'].A>0, afm.layers['qual'].A, np.nan), axis=0)
     else:
-        pass
+        logging.info('Mean quality and coverage not annotated')
 
     # Calculate the number of cells that exceed VAF thresholds 0, 1, 5, 10, 50 as in Weng et al., 2024
 
