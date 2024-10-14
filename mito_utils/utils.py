@@ -228,7 +228,12 @@ def extract_one_dict(path, sample, job_id):
     d['dataset_metrics']['n_dbSNP'] = d['char_filter']['n_dbSNP'] 
     d['dataset_metrics']['n_REDIdb'] = d['char_filter']['n_REDIdb'] 
     del d['char_filter']['n_REDIdb'] 
-    del d['char_filter']['n_dbSNP'] 
+    del d['char_filter']['n_dbSNP']
+
+    if "raw_basecall_metrics" in d:
+        pass:
+    else:
+        d['raw_basecalls_metrics'] = {}
 
     options = {
         **{'pp_method':d['pp_method']},
@@ -238,7 +243,7 @@ def extract_one_dict(path, sample, job_id):
         **d['char_filter']
     }
     metrics = {
-        **d['raw_basecalls_metrics'] if "raw_basecall_metrics" in d else {},
+        **d['raw_basecalls_metrics'],
         **d['dataset_metrics'],
         **{'corr':d['corr_dist'][0]},
         **d['lineage_metrics']
