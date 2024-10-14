@@ -238,7 +238,7 @@ def extract_one_dict(path, sample, job_id):
         **d['char_filter']
     }
     metrics = {
-        **d['raw_basecalls_metrics'],
+        **d['raw_basecalls_metrics'] if "raw_basecall_metrics" in d else {},
         **d['dataset_metrics'],
         **{'corr':d['corr_dist'][0]},
         **d['lineage_metrics']
