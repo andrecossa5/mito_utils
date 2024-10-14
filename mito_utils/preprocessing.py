@@ -348,21 +348,20 @@ def filter_afm(
     logging.info(f'Filter MT-SNVs...')
     pp_method = afm.uns['pp_method']
     
+    logging.info(f'Feature selection method: {filtering}')
+    logging.info(f'Original afm: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
+    
+    # Cells from clone with at least min_cell_number cells, if necessary
+    if min_cell_number>0 and lineage_column is not None:
+        afm = filter_cell_clones(afm, column=lineage_column, min_cell_number=min_cell_number)
+       
+    # Baseline filter
+    afm = filter_baseline(afm)
+    logging.info(f'afm after baseline filter: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
+    
     if filtering in filtering_options:
 
-        logging.info(f'Feature selection method: {filtering}')
-        logging.info(f'Original afm: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
-        
-        # Cells from clone with at least min_cell_number cells, if necessary
-        if min_cell_number>0 and lineage_column is not None:
-            afm = filter_cell_clones(afm, column=lineage_column, min_cell_number=min_cell_number)
-       
-        # Baseline filter
-        afm = filter_baseline(afm)
-        logging.info(f'afm after baseline filter: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
-
         test_pp = pp_method in ['maegatk', 'mito_preprocessing']
-
         if filtering == 'baseline' and test_pp:
             pass
         if filtering == 'CV' and test_pp:

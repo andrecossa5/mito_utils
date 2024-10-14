@@ -32,7 +32,7 @@ def vars_AF_dist(afm, ax=None, color='b', **kwargs):
 ##
 
 
-def plot_ncells_nAD(afm, ax=None, title=None, xticks=None, yticks=None, s=5, c='k'):
+def plot_ncells_nAD(afm, ax=None, title=None, xticks=None, yticks=None, s=5, c='k', alpha=.7, **kwargs):
     """
     Plots similar to Weng et al., 2024, followed by the two commentaries from Lareau and Weng.
     n+ cells vs n 
@@ -40,7 +40,7 @@ def plot_ncells_nAD(afm, ax=None, title=None, xticks=None, yticks=None, s=5, c='
 
     annotate_vars(afm, overwrite=True)
 
-    ax.plot(afm.var['Variant_CellN'], afm.var['mean_AD_in_positives'], 'o', c=c, alpha=.2, markersize=s)
+    ax.plot(afm.var['Variant_CellN'], afm.var['mean_AD_in_positives'], 'o', c=c, markersize=s, alpha=alpha, **kwargs)
     ax.set_yscale('log', base=2)
     ax.set_xscale('log', base=2)
     xticks = [0,1,2,5,10,20,40,80,160,320,640] if xticks is None else xticks
@@ -87,7 +87,7 @@ def mut_profile(mut_list, ref_df=None, figsize=(6,3)):
 
     fig, axs = plt.subplots(1, prop_df['group_change'].unique().size, figsize=figsize, sharey=True, gridspec_kw={'wspace': 0.1},
                             constrained_layout=True)
-    strand_palette = {'H': 'darkred', 'L': 'blue'}
+    strand_palette = {'H': '#05A8B3', 'L': '#D76706'}
 
     for i,x in enumerate(prop_df['group_change'].unique()):
         ax = axs.ravel()[i]
@@ -104,32 +104,49 @@ def mut_profile(mut_list, ref_df=None, figsize=(6,3)):
 ##
 
 
-def MT_coverage_polar(afm, ax=None, title=None):
+def MT_coverage_polar(df, var_subset=None, ax=None, n_xticks=6, xticks_size=7, 
+                    yticks_size=2, xlabel_size=6, ylabel_size=9, kwargs_main={}, kwargs_subset={},):
+    
     """
-    Plot log10 nUMIs coverare across MT-genome positions.
+    Plot coverage and muts across postions.
     """
-    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
-    mean_x = x.mean()
-    theta = np.linspace(0, 2*np.pi, len(x))
+    
+    kwargs_main_ = {'c':'#494444', 'linestyle':'-', 'linewidth':.7}
+    kwargs_subset_ = {'c':'r', 'marker':'+', 'markersize':10, 'linestyle':''}
+    kwargs_main_.update(kwargs_main)
+    kwargs_subset_.update(kwargs_subset)
 
+    x = df.mean(axis=0)
+
+    theta = np.linspace(0, 2*np.pi, len(x))
     ticks = [ 
         int(round(x)) \
-        for x in np.linspace(1, afm.uns['per_position_coverage'].shape[1], 8) 
+        for x in np.linspace(1, df.shape[1], n_xticks) 
     ][:7]
 
-    if title is None:
-        t = 'MT-genome coverage'
-    else:
-        t = f'{title} (mean={mean_x:.2f})'
+    ax.plot(theta, np.log10(x), **kwargs_main_)
 
-    ax.plot(theta, np.log10(x), '-', linewidth=0.8)
-    ax.plot(theta, [ np.log10(mean_x) for _ in theta ], 'r--')
+    if var_subset is not None:
+        var_pos = var_subset.map(lambda x: int(x.split('_')[0]))
+        test = x.index.isin(var_pos)
+        print(test.sum())
+        ax.plot(theta[test], np.log10(x[test]), **kwargs_subset_)
+
     ax.set_theta_offset(np.pi/2)
-    ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
-    ax.set_xticklabels(ticks)
-    ax.set(xlabel='Position (bp)', title=t)
+    ax.set_xticks(np.linspace(0, 2*np.pi, n_xticks-1, endpoint=False))#, fontsize=1)
+    ax.set_xticklabels(ticks[:-1], fontsize=xticks_size)
+
+    ax.set_yticklabels([])
+    for tick in np.arange(-1,4,1):
+        ax.text(0, tick, str(tick), ha='center', va='center', fontsize=yticks_size)
+
+    ax.text(0, 1.5, 'n UMIs', ha='center', va='center', fontsize=xlabel_size, color='black')
+    ax.text(np.pi, 4, 'Position (bp)', ha='center', va='center', fontsize=ylabel_size, color='black')
+
+    ax.spines['polar'].set_visible(False)
 
     return ax
+
 
 
 ##
@@ -141,11 +158,11 @@ def MT_coverage_by_gene_polar(afm, ax=None, sample=None):
     """
 
     df_mt = pd.DataFrame(MAESTER_genes_positions, columns=['gene', 'start', 'end']).set_index('gene').sort_values('start')
-    x = np.mean(afm.uns['per_position_coverage'].values, axis=0)
+    x = np.mean(afm.layers['site_coverage'].A, axis=0)
 
     test_sites = mask_mt_sites(afm)
-    median_target = afm.uns['per_position_coverage'].loc[:,test_sites].median(axis=0).median()
-    median_untarget = afm.uns['per_position_coverage'].loc[:,~test_sites].median(axis=0).median()
+    median_target = np.median(np.median(afm.layers['site_coverage'].A[:,test_sites]), axis=0)
+    median_untarget = np.median(np.median(afm.layers['site_coverage'].A[:,~test_sites]), axis=0)
 
     theta = np.linspace(0, 2*np.pi, len(x))
     colors = { k:v for k,v in zip(df_mt.index, sc.pl.palettes.default_102[:df_mt.shape[0]])}
@@ -159,7 +176,7 @@ def MT_coverage_by_gene_polar(afm, ax=None, sample=None):
 
     ticks = [ 
         int(round(x)) \
-        for x in np.linspace(1, afm.uns['per_position_coverage'].shape[1], 8) 
+        for x in np.linspace(1, afm.shape[1], 8) 
     ][:7]
     ax.set_theta_offset(np.pi/2)
     ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))

@@ -224,6 +224,11 @@ def extract_one_dict(path, sample, job_id):
 
     with open(path, 'rb') as f:
         d = pickle.load(f)
+        
+    d['dataset_metrics']['n_dbSNP'] = d['char_filter']['n_dbSNP'] 
+    d['dataset_metrics']['n_REDIdb'] = d['char_filter']['n_REDIdb'] 
+    del d['char_filter']['n_REDIdb'] 
+    del d['char_filter']['n_dbSNP'] 
 
     options = {
         **{'pp_method':d['pp_method']},
@@ -239,8 +244,8 @@ def extract_one_dict(path, sample, job_id):
         **d['lineage_metrics']
     }
 
-    df_options = pd.Series(options).to_frame('value').T.assign(sample=sample, job_id=job_id)
-    df_metrics = pd.Series(metrics).to_frame('value').reset_index(names=['metric']).assign(sample=sample, job_id=job_id)
+    df_options = pd.Series(options).to_frame('option_value').reset_index(names=['option']).assign(sample=sample, job_id=job_id)
+    df_metrics = pd.Series(metrics).to_frame('metric_value').reset_index(names=['metric']).assign(sample=sample, job_id=job_id)
 
     return df_options, df_metrics
 
@@ -257,14 +262,13 @@ def format_results(path_results):
             job_id = file.split('_')[0]
             try:
                 df_options, df_metrics = extract_one_dict(os.path.join(folder, file), sample, job_id)
+                options.append(df_options)
+                metrics.append(df_metrics)
             except:
                 pass
-            options.append(df_options)
-            metrics.append(df_metrics)
 
-
-    df = pd.concat(metrics).merge(pd.concat(options).reset_index(drop=True), on=['sample', 'job_id'])
-    df = df.rename(columns={'metric_x':'metric', 'metrix_y':'distance_metric'})
+    df = pd.concat(metrics).merge(pd.concat(options), on=['sample', 'job_id'])
+    df = df[['job_id', 'sample', 'metric', 'metric_value', 'option', 'option_value']]
 
     return df
 
