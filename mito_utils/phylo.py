@@ -690,16 +690,16 @@ def cut_and_annotate_tree(tree, n_clones=None):
     # fig.tight_layout()
     # plt.show()
 
-    # Determine optimal number of clusters
+    # Determine optimal number of MT-SNVs clusters
     if n_clones is None:
         measures = []
-        max_k = round(D.shape[0] * (2/3))
-        for k in range(2, max_k, 1):
+        n_clones = list(range(2, D.shape[0]+1))
+        for k in n_clones:
             np.random.seed(1234)
             labels = fcluster(L, k, criterion='maxclust')
             silhouette_avg = silhouette_score(D, labels, metric='precomputed')
             measures.append(silhouette_avg)
-        n_clones = np.argmax(measures)
+        n_clones = n_clones[np.argmax(measures)]
         logging.info(f'Optimal mut_clusters: {n_clones}')
 
         # fig, ax = plt.subplots(figsize=(4.5,4.5))
