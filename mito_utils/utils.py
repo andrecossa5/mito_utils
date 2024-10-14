@@ -231,7 +231,7 @@ def extract_one_dict(path, sample, job_id):
     del d['char_filter']['n_dbSNP']
 
     if "raw_basecall_metrics" in d:
-        pass:
+        pass
     else:
         d['raw_basecalls_metrics'] = {}
 
