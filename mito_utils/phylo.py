@@ -691,9 +691,10 @@ def cut_and_annotate_tree(tree, n_clones=None):
     # plt.show()
 
     # Determine optimal number of MT-SNVs clusters
+    maxK = D.shape[0] if D.shape[0] <=25 else round( D.shape[0] * (2/3) )
     if n_clones is None:
         measures = []
-        n_clones = list(range(2, D.shape[0]+1))
+        n_clones = list(range(2, maxK+1))
         for k in n_clones:
             np.random.seed(1234)
             labels = fcluster(L, k, criterion='maxclust')
