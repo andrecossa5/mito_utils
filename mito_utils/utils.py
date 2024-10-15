@@ -249,11 +249,13 @@ def extract_one_dict(path, sample, job_id):
         **d['lineage_metrics']
     }
 
-    df_options = pd.Series(options).to_frame('option_value').reset_index(names=['option']).assign(sample=sample, job_id=job_id)
-    df_metrics = pd.Series(metrics).to_frame('metric_value').reset_index(names=['metric']).assign(sample=sample, job_id=job_id)
+    df_options = pd.Series(options).to_frame('option_value').T.assign(sample=sample, job_id=job_id)
+    df_metrics = pd.Series(metrics).to_frame('metric_value').T.assign(sample=sample, job_id=job_id)
 
     return df_options, df_metrics
 
+
+##
 
 
 def format_results(path_results):
@@ -272,10 +274,40 @@ def format_results(path_results):
             except:
                 pass
 
-    df = pd.concat(metrics).merge(pd.concat(options), on=['sample', 'job_id'])
-    df = df[['job_id', 'sample', 'metric', 'metric_value', 'option', 'option_value']]
+    df_metrics = pd.concat(metrics).set_index(['job_id', 'sample'])
+    df_options = pd.concat(options).set_index(['job_id', 'sample'])
+    metrics = df_metrics.columns
+    options = df_options.columns
 
-    return df
+    df = df_metrics.join(df_options).reset_index()
+
+    return df, metrics, options
+
+
+##
+
+
+def rank_items(df, groupings, metrics, weights, metric_annot):
+
+    df_agg = df.groupby(groupings, dropna=False)[metrics].mean().reset_index()
+
+    for metric_type in metric_annot:
+        colnames = []
+        for metric in metric_annot[metric_type]:
+            colnames.append(f'{metric}_rescaled')
+            if metric in ['n_dbSNP', 'n_REDIdb']:
+                df_agg[metric] = -df_agg[metric]
+            df_agg[f'{metric}_rescaled'] = (df_agg[metric] - df_agg[metric].min()) / \
+                                           (df_agg[metric].max() - df_agg[metric].min())
+
+        x = df_agg[colnames].mean(axis=1)
+        df_agg[f'{metric_type} score'] = (x - x.min()) / (x.max() - x.min())
+
+    x = np.sum(df_agg[ [ f'{k} score' for k in metric_annot ] ] * np.array([ weights[k] for k in metric_annot ]), axis=1)
+    df_agg['Overall score'] = (x - x.min()) / (x.max() - x.min())
+    df_agg = df_agg.sort_values('Overall score', ascending=False)
+
+    return df_agg
 
 
 ##
