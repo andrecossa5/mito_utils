@@ -152,20 +152,27 @@ def _place_tree_and_annotations(
                     else:
                         raise ValueError(f'''Adjust categorical_cmaps. {feat}: 
                                          categorical_cmaps is nor a str, a list or a dict...''')
-                    if not all([ cat in categorical_cmap.keys() for cat in x.unique() ]):
-                        cats = x.unique()
-                        print(cats)
-                        missing_cats = cats[[ cat not in categorical_cmap.keys() for cat in cats ]]
-                        print(f'Missing cats in cmap for meta feat {feat}: {missing_cats}. Adding new colors...')
-                        for i,missing in enumerate(missing_cats):
-                            categorical_cmap[missing] = _categorical_cmaps[0][i]
-                        assert(all([ cat in categorical_cmap.keys() for cat in x.unique() ]))
                 else:
                     raise KeyError(f'{feat} not present in meta. Adjust categorical_cmaps and meta params...')
+            
+            if not all([ cat in categorical_cmap.keys() for cat in x.unique() ]):
+
+                cats = x.unique()
+                missing_cats = cats[[ cat not in categorical_cmap.keys() for cat in cats ]]
+                print(f'Missing cats in cmap for meta feat {feat}: {missing_cats}. Adding new colors...')
+
+                for i,missing in enumerate(missing_cats):
+                    categorical_cmap[missing] = _categorical_cmaps[0][i]
+
+            assert(all([ cat in categorical_cmap.keys() for cat in x.unique() ]))
+
+            x[x.isna()] = 'unassigned'
+            categorical_cmap.update({'unassigned':'grey'})
 
             boxes, anchor_coords = ut.place_colorstrip(
                 anchor_coords, width, tight_height, spacing, loc
             )
+            
             colorstrip = {}
             for leaf in x.index:
                 cat = x.loc[leaf]
@@ -393,6 +400,28 @@ def plot_tree(
                 )
  
     return ax
+
+
+##
+
+
+def get_supports(tree, subset=None):
+
+    L = []
+    for node in tree.internal_nodes:
+        if subset is not None:
+            if node in subset:
+                try:
+                    L.append(tree.get_attribute(node, 'support'))
+                except:
+                    pass
+        else:
+            try:
+                L.append(tree.get_attribute(node, 'support'))
+            except:
+                pass
+
+    return np.array(L)
 
 
 ##

@@ -371,7 +371,7 @@ def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None,
 ##
 
 
-def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
+def box(df, x, y, by=None, c='grey', saturation=0.7, ax=None, with_stats=False,
     pairs=None, order=None, hue_order=None, kwargs={}):
     """
     Base box plot.
@@ -388,26 +388,26 @@ def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
     params = update_params(params, kwargs)
     
     if isinstance(c, str) and by is None:
-        sns.boxplot(data=df, x=x, y=y, color=c, ax=ax, saturation=0.7, order=order, **params) 
+        sns.boxplot(data=df, x=x, y=y, color=c, ax=ax, saturation=saturation, order=order, **params) 
         ax.set(xlabel='')
 
     elif isinstance(c, dict) and by is None:
         if all([ True if k in df[x].unique() else False for k in c.keys() ]):
             palette = [c[category] for category in order]
-            sns.boxplot(data=df, x=x, y=y, palette=palette, ax=ax, saturation=0.7, order=order, **params)
+            sns.boxplot(data=df, x=x, y=y, palette=palette, ax=ax, saturation=saturation, order=order, **params)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
             
     elif isinstance(c, dict) and by is not None:
         if all([ True if k in df[by].unique() else False for k in c.keys() ]):
-            sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, hue_order=hue_order, ax=ax, saturation=0.7, **params)
+            sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, hue_order=hue_order, ax=ax, saturation=saturation, **params)
             ax.legend([], [], frameon=False)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
     elif isinstance(c, str) and by is not None:
-        sns.boxplot(data=df, x=x, y=y, hue=by, hue_order=hue_order, ax=ax, saturation=0.7, **params)
+        sns.boxplot(data=df, x=x, y=y, hue=by, hue_order=hue_order, ax=ax, saturation=saturation, **params)
         ax.legend([], [], frameon=False)
         ax.set(xlabel='')
 
