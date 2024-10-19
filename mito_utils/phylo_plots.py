@@ -412,12 +412,16 @@ def get_supports(tree, subset=None):
         if subset is not None:
             if node in subset:
                 try:
-                    L.append(tree.get_attribute(node, 'support'))
+                    s = tree.get_attribute(node, 'support')
+                    s = s if s is not None else np.nan
+                    L.append(s)
                 except:
                     pass
         else:
             try:
-                L.append(tree.get_attribute(node, 'support'))
+                s = tree.get_attribute(node, 'support')
+                s = s if s is not None else np.nan
+                L.append(s)
             except:
                 pass
 
