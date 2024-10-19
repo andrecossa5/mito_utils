@@ -5,7 +5,7 @@ I/O functions to read/write CassiopeiaTrees from annotated (supports) .newick st
 import anndata
 import pandas as pd
 from cassiopeia.data import CassiopeiaTree
-from Bio import Phylo
+from Bio.Phylo.NewickIO import Parser
 from io import StringIO
 import networkx as nx
 
@@ -25,7 +25,8 @@ def _add_edges(G, clade, parent=None, counter=[1]):
 
     G.add_node(node_name, support=clade.confidence)
     if parent:
-        G.add_edge(parent, node_name, length=clade.branch_length)
+        branch_length = clade.branch_length if clade.branch_length is not None else 1
+        G.add_edge(parent, node_name, length=branch_length)
     for child in clade.clades:
         _add_edges(G, child, node_name, counter)
 
@@ -37,9 +38,12 @@ def read_newick(path, X_raw=None, X_bin=None, D=None, meta=None) -> CassiopeiaTr
     """
     Read an newick string as a CassiopeiaTree object.
     """
+
     with open(path, 'r') as f:
-        newick = f.readlines()[0]
-    original_tree = Phylo.read(StringIO(newick), "newick")
+        newick = f.read().strip()
+
+    parser = Parser(StringIO(newick))
+    original_tree = list(parser.parse())[0]
 
     G = nx.DiGraph()
     _add_edges(G, original_tree.root, counter=[1])
