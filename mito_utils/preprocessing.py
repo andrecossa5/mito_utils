@@ -86,6 +86,7 @@ def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5,
         pass
 
     afm.uns['cell_filter'] = {
+        'cell_subset':cell_subset,
         'cell_filter':cell_filter,
         'nmads':nmads, 
         'mean_cov_all':mean_cov_all, 
@@ -160,7 +161,7 @@ def compute_connectivity_metrics(X):
 ##
 
 
-def compute_metrics_filtered(afm, spatial_metrics=True, 
+def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
                             bin_method='MI_TO', binarization_kwargs={}, tree_kwargs={}):
     """
     Compute additional metrics on selected MT-SNVs feature space.
@@ -219,10 +220,7 @@ def compute_metrics_filtered(afm, spatial_metrics=True,
         d['proportion_largest_component'] = proportion_largest_component
 
         # Baseline tree internal nodes mutations support
-        tree = build_tree(afm, bin_method=bin_method, binarization_kwargs=binarization_kwargs, **tree_kwargs)
-        # tree_collapsed = tree.copy()
-        # tree_collapsed.collapse_mutationless_edges(True)
-        # d['frac_supported_nodes'] = len(tree_collapsed.internal_nodes) / len(tree.internal_nodes)
+        tree = build_tree(afm, bin_method=bin_method, binarization_kwargs=binarization_kwargs, ncores=ncores, **tree_kwargs)
 
     # To .uns
     afm.uns['dataset_metrics'].update(d)
@@ -235,10 +233,10 @@ def compute_metrics_filtered(afm, spatial_metrics=True,
 
 def filter_afm(
     afm, lineage_column=None, min_cell_number=0, cells=None,
-    filtering='MI_TO', filtering_kwargs={}, max_AD_counts=1, variants=None,
+    filtering='MI_TO', filtering_kwargs={}, max_AD_counts=2, variants=None,
     fit_mixtures=False, only_positive_deltaBIC=False, path_dbSNP=None, path_REDIdb=None, 
     compute_enrichment=False, bin_method='MI_TO', binarization_kwargs={}, ncores=8,
-    spatial_metrics=False, tree_kwargs={}, nproc=8, return_tree=False
+    spatial_metrics=False, tree_kwargs={}, return_tree=False
     ):
     """
     
@@ -466,13 +464,13 @@ def filter_afm(
 
     # Last dataset stats 
     logging.info(f'Add last metrics')
-    tree_kwargs.update({'ncores':ncores})
     tree = compute_metrics_filtered(
         afm, 
         spatial_metrics=spatial_metrics, 
         tree_kwargs=tree_kwargs,
         bin_method=bin_method, 
-        binarization_kwargs=binarization_kwargs
+        binarization_kwargs=binarization_kwargs,
+        ncores=ncores
     )
 
     # Add params to .uns
@@ -480,6 +478,7 @@ def filter_afm(
         'lineage_column' : lineage_column, 
         'min_cell_number' : min_cell_number,
         'filtering' : filtering if (cells is not None) or (variants is not None) else 'predefined_sets',
+        'max_AD_counts' : max_AD_counts,
         'only_positive_deltaBIC' : only_positive_deltaBIC,
         'compute_enrichment' : compute_enrichment,
         'spatial_metrics' : spatial_metrics,

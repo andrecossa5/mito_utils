@@ -119,8 +119,7 @@ def genotype_mixtures_smooth(AD, DP, t_prob=.75, k=10, gamma=.25, n_samples=100,
 ##
 
 
-def call_genotypes(afm, bin_method='vanilla', t_prob=.75, t_vanilla=.001,
-                   k=10, gamma=.25, n_samples=100, min_AD=1, min_cell_prevalence=.1):
+def call_genotypes(afm, bin_method='vanilla', t_vanilla=.0, min_AD=2, t_prob=.75, min_cell_prevalence=.1, k=10, gamma=.25, n_samples=100):
     """
     Call genotypes using simple thresholding or th MI_TO binomial mixtures approachm (w/i or w/o kNN smoothing).
     """
@@ -150,8 +149,11 @@ def call_genotypes(afm, bin_method='vanilla', t_prob=.75, t_vanilla=.001,
 
     afm.layers['bin'] = csr_matrix(X)
     afm.uns['genotyping'] = {
-        'bin_method':bin_method, 't_prob':t_prob, 
-        't_vanilla':t_vanilla, 'min_AD':min_AD, 'min_cell_prevalence':min_cell_prevalence
+        'bin_method':bin_method, 
+        'binarization_kwargs': {
+            't_prob':t_prob, 't_vanilla':t_vanilla, 
+            'min_AD':min_AD, 'min_cell_prevalence':min_cell_prevalence
+        }
     }
 
 
@@ -159,27 +161,28 @@ def call_genotypes(afm, bin_method='vanilla', t_prob=.75, t_vanilla=.001,
 
 
 def preprocess_feature_matrix(
-    afm, distance_key='distances', metric='custom_jaccard', bin_method='MI_TO', binarization_kwargs={}
+    afm, distance_key='distances', metric='jaccard', bin_method=None, binarization_kwargs={}
     ):
     """
     Preprocess a feature matrix for distancea computations.
     """
     
     layer = 'bin'
-    afm.uns['genotyping'].update({**dict(bin_method=bin_method), **binarization_kwargs})
+    logging.info('Updating afm.uns.genotyping')
+    afm.uns['genotyping'].update({'bin_method':bin_method, 'binarization_kwargs':binarization_kwargs})
     afm.uns['distance_calculations'] = {}
 
     if metric in continuous_metrics:
-        logging.info(f'Compute distances: metric={metric}')
+        logging.info(f'Preprocess feature matrix: metric={metric}')
         layer = 'scaled'
         afm.layers['scaled'] = csr_matrix(pp.scale(afm.X.A))
         
     elif metric in discrete_metrics or metric in custom_discrete_metrics:
-        logging.info(f'Compute distances: metric={metric}, bin_method={bin_method}')
+        logging.info(f'Preprocess feature matrix: metric={metric}, bin_method={bin_method}')
         if 'bin' not in afm.layers:
             layer = 'bin'
             call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-            
+
     else:
         raise ValueError(f'Specify for a valid metric in {continuous_metrics}, {discrete_metrics} or {custom_discrete_metrics}')
 
@@ -201,8 +204,8 @@ def _get_metric_and_layer(afm, distance_key):
 
 
 def compute_distances(
-    afm, distance_key='distances', metric='custom_jaccard', 
-    bin_method='MI_TO', ncores=8,  metric_kwargs={}, binarization_kwargs={}
+    afm, distance_key='distances', metric='jaccard', 
+    bin_method='vanilla', ncores=1,  metric_kwargs={}, binarization_kwargs={}
     ):
     """
     Calculates pairwise cell--cell (or sample-) distances in some character space (e.g., MT-SNVs mutation space).
@@ -210,9 +213,9 @@ def compute_distances(
     Args:
         afm (AnnData): An annotated cell x character matrix with .X slot and bin or scaled layers.
         distance_key (str, optional): Key in .obsp at which the new distances will be stored. Default: distances.
-        metric ((str, callable), optional): distance metric. Default: 'custom_jaccard'.
+        metric ((str, callable), optional): distance metric. Default: 'jaccard'.
         bin_method (str, optional): method to binarize the provided character matrix, if the chosen metric 
-            involves comparison of discrete character vectors. Default: MI_TO.
+            involves comparison of discrete character vectors. Default: vanilla.
         ncores (int, optional): n processors for parallel computation. Default: 8.
         metric_kwargs (dict, optional): **kwargs of the metric function. Default: {}.
         binarization_kwargs (dict, optional): **kwargs of the discretization function. Default: {}.

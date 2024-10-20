@@ -169,8 +169,8 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
 
 def build_tree(
-    afm, precomputed=False, distance_key='distances', metric='custom_MI_TO_jaccard', 
-    bin_method='MI_TO', solver='NJ', ncores=8, min_n_positive_cells=2, max_frac_positive=.95,
+    afm, precomputed=False, distance_key='distances', metric='jaccard', 
+    bin_method='vanilla', solver='UPMGA', ncores=1, min_n_positive_cells=2, max_frac_positive=.95,
     metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}
     ):
     """
@@ -181,7 +181,7 @@ def build_tree(
     if precomputed:
         if distance_key in afm.obsp:
             if metric == afm.uns['distance_calculations'][distance_key]['metric']:
-                pass
+                logging.info('Use precomputed distances...')
     else:
         compute_distances(
             afm, distance_key=distance_key, metric=metric, bin_method=bin_method,
