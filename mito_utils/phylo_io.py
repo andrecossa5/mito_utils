@@ -56,9 +56,9 @@ def read_newick(path, X_raw=None, X_bin=None, D=None, meta=None) -> CassiopeiaTr
     cells = [ x for x in G.nodes if not x.startswith('internal') ]
     cassiopeia_tree = CassiopeiaTree(
         tree=G, 
-        character_matrix=X_bin.loc[cells,:], 
-        dissimilarity_map=D.loc[cells,cells], 
-        cell_meta=meta.loc[cells,:]
+        character_matrix=X_bin.loc[cells,:] if X_bin is not None else None, 
+        dissimilarity_map=D.loc[cells,cells] if D is not None else None, 
+        cell_meta=meta.loc[cells,:] if meta is not None else None
     )
     if X_raw is not None and X_bin is not None:
         cassiopeia_tree.layers['raw'] = X_raw.loc[cells,:]
