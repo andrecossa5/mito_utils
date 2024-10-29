@@ -604,7 +604,7 @@ def _resolve_node_assignment(x, times_d):
         nodes =  nodes.index
         assigned_node = nodes[np.argmax([ times_d[node] for node in nodes ])]
     else:
-        assigned_node = np.nan
+        assigned_node = 'Unassigned'
     return assigned_node
 
 
@@ -633,6 +633,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
     n = len(tree.leaves)
 
     P = {}
+    logging.info('Assign variants to internal nodes...')
     for lineage_column in df_clades:
 
         target_ratio_array = np.zeros(muts.size)
@@ -739,6 +740,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
     df_clades = pd.Series(resolved_nodes).to_frame('clade')
     df_clades['MT_clone'] = df_clades['clade'].map(node_assignment['MT_clone'].to_dict())
     tree.cell_meta['MT_clone'] = df_clades.loc[tree.cell_meta.index, 'MT_clone']
+    tree.cell_meta['MT_clone'] = np.where(~tree.cell_meta['MT_clone'].isna(), tree.cell_meta['MT_clone'], 'Undefined')
     n_clones = tree.cell_meta['MT_clone'].unique().size
     
     logging.info(f'Final MT_clones: {n_clones}')
@@ -748,6 +750,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
         for clone in node_assignment['MT_clone'].unique()
     }
     tree.cell_meta['clone_muts'] = tree.cell_meta['MT_clone'].map(clone_muts)
+
 
     return tree, mut_nodes, mutation_order
 

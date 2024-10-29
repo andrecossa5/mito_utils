@@ -368,7 +368,6 @@ def plot_tree(
         internal_node_subset = [ x for x in internal_node_subset if x in tree.internal_nodes ]
         internal_nodes = { node : internal_nodes[node] for node in internal_nodes if node in internal_node_subset }
  
-    # Here we go
     if feature_internal_nodes is not None:
         s = pd.Series({ node : tree.get_attribute(node, feature_internal_nodes) for node in internal_nodes })
         s.loc[lambda x: x.isna()] = 0 # Set missing values to 0
@@ -378,6 +377,12 @@ def plot_tree(
             cmap=cmap_internal_nodes, kwargs=_internal_node_kwargs,
             vmin=vmin_annot, vmax=vmax_annot
         )
+    # else:
+    #     if feature_internal_nodes is None and internal_node_subset is not None:
+    #         for node in tree.internal_nodes:
+    #             colors = 
+    #     else:
+    #         raise ValueError('')
         
     for node in internal_nodes:
         _dict = _internal_node_kwargs.copy()

@@ -7,6 +7,7 @@ import scanpy as sc
 import seaborn as sns
 import colorsys
 import matplotlib.colors
+from scipy.optimize import linear_sum_assignment
 import numpy as np
 
 
@@ -88,66 +89,68 @@ def create_colors(meta, chosen=None):
 ##
 
 
-def harmonize_colors(df, group1=None, group2=None, palette=None):
+def assign_matching_colors(df, g1, g2, palette):
     """
-    Given two sets of labels, create two dicts of colors that match closely.
+    Assign colors to categories in g1 and g2, ensuring colors are unique and come from the provided palette.
+
+    Parameters:
+    - df: DataFrame with at least two categorical columns, g1 and g2.
+    - g1: The column name for the first categorical variable.
+    - g2: The column name for the second categorical variable.
+    - palette: List of colors to assign to categories.
+
+    Returns:
+    - g1_colors: Dictionary mapping categories in g1 to colors.
+    - g2_colors: Dictionary mapping categories in g2 to colors.
     """
-    
-    if palette is None:
-        if d2['GBC'].unique().size > 15:
-            palette = [ matplotlib.colors.hex2color(x) for x in sc.pl.palettes.godsnot_102 ]
-        else:
-            palette = ten_godisnot
+    # Convert categories to strings
+    df[g1] = df[g1].astype(str)
+    df[g2] = df[g2].astype(str)
 
-    cross = pd.crosstab(df[group1].astype('str'), df[group2].astype('str'), normalize=0)
-    # order = embs.groupby('inference').size().sort_values(ascending=False).index
-    # cross = cross.loc[order,:]
-    
-    g1 = []
-    g2 = []
-    colors = []
-    g1_labels = cross.index.to_list()
-    g2_labels = cross.columns.to_list()
+    # Get unique categories
+    g1_categories = df[g1].unique()
+    g2_categories = df[g2].unique()
 
-    for i in range(cross.shape[0]):
+    total_categories = len(g1_categories) + len(g2_categories)
+    if len(palette) < total_categories:
+        raise ValueError(f"Not enough colors in the palette to assign to all categories. Needed: {total_categories}, available: {len(palette)}.")
 
-        x = cross.iloc[i,:] 
-        j = np.argmax(x)
-        # go = True
-        # while go:
-        #     try:
-        #         j = np.where(x>t)[0][0]
-        #         go = False
-        #     except:
-        #         t -= 0.1            
+    # Assign colors to g1 categories
+    palette_iter = iter(palette)
+    g1_colors = {}
+    used_colors = set()
+    for g1_cat in g1_categories:
+        color = next(palette_iter)
+        g1_colors[g1_cat] = color
+        used_colors.add(color)
 
-        g1.append(g1_labels[i])
-        colors.append(palette[i])
-                      
-        if not g2_labels[j] in g2:
-            gg2bc.append(g2_labels[j])
-            
-    len(colors)
+    # Compute the crosstab (contingency table)
+    crosstab = pd.crosstab(df[g2], df[g1])
 
-    # Final rescue
-    for x2 in g2_labels:
-        if x2 not in g2:
-            i += 1
-            g2.append(x2)
-            colors.append(palette[i])
-            
-    colors_g2 = { k:v for k,v in zip(g2, colors[:len(g2)])} 
-    colors_g1 = { k:v for k,v in zip(g1, colors[:len(g1)])} 
+    # Initialize the color assignments for g2
+    g2_colors = {}
+    for g2_cat in g2_categories:
+        counts = crosstab.loc[g2_cat] if g2_cat in crosstab.index else None
+        assigned = False
+        if counts is not None and counts.sum() > 0:
+            # Get the g1 category with the highest count
+            g1_cat = counts.idxmax()
+            color = g1_colors[g1_cat]
+            if color not in g2_colors.values():
+                g2_colors[g2_cat] = color
+                assigned = True
 
-    if 'unassigned' in df[g1].values:
-        colors_g1['unassigned'] = (
-            0.8470588235294118, 0.8274509803921568, 0.792156862745098
-        )
-        
-    assert all([x in g1_labels for x in colors_g1])
-    assert all([x in g2_labels for x in g2])
+        if not assigned:
+            # Assign next available color from the palette that hasn't been used yet
+            while True:
+                color = next(palette_iter, None)
+                if color is None:
+                    raise ValueError("Ran out of colors in the palette.")
+                if color not in g2_colors.values() and color not in g1_colors.values():
+                    g2_colors[g2_cat] = color
+                    break
 
-    return colors_g1, colors_g2
+    return g1_colors, g2_colors
     
         
 ##

@@ -72,7 +72,9 @@ def handle_colors(df, cat, legend_params, query=None):
         palette_cat = sc.pl.palettes.godsnot_102
         legend_params['colors'] = create_palette(df_, cat, palette_cat)
     elif isinstance(legend_params['colors'], dict):
-        assert all([ k in categories for k in legend_params['colors']])
+        print(categories)
+        print(legend_params['colors'].keys())
+        assert all([ cat in legend_params['colors'] for cat in categories ])
         print('Provided colors are OK...')
     else:
         raise ValueError('Provide a correctly formatted palette for your categorical labels!')

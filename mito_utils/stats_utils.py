@@ -3,6 +3,7 @@ Discretization module.
 """
 
 import numpy as np
+import pandas as pd
 import scipy.stats as stats
 from scipy.optimize import minimize
 from scipy.special import logsumexp
@@ -193,12 +194,15 @@ def genotype_mix(ad, dp, t_prob=.75, t_vanilla=.05, debug=False, min_AD=2):
     AD and DP counts of one of its candidate mitochondrial variants.
     """
 
-    posterior_probs = get_posteriors(ad, dp)
+    positive_idx = np.where(dp>0)[0]
+    posterior_probs = get_posteriors(ad[positive_idx], dp[positive_idx])
     tests = [ 
-        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)) & (ad>=min_AD), 
+        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)) & (ad[positive_idx]>=min_AD), 
         (posterior_probs[:,1]<(1-t_prob)) & (posterior_probs[:,0]>t_prob) 
     ]
     geno_prob = np.select(tests, [1,0], default=-1)
+    genotypes = -np.ones(ad.size, dtype=np.int16)
+    genotypes[positive_idx] = geno_prob
     
     # Compare to vanilla genotyping (AF>t --> 1, 0 otherwise)
     if debug:
@@ -210,7 +214,7 @@ def genotype_mix(ad, dp, t_prob=.75, t_vanilla=.05, debug=False, min_AD=2):
         print(pd.crosstab(df['geno_vanilla'], df['geno_prob'], dropna=False))
         return df
     else:
-        return geno_prob
+        return genotypes
 
 
 ##

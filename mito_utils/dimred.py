@@ -112,8 +112,8 @@ def _get_D(afm, distance_key, **kwargs):
 
 
 def reduce_dimensions(
-    afm, layer='bin', distance_key='distances', seed=1234, method='UMAP', k=15, n_comps=2, ncores=8,
-    metric='custom_MI_TO_jaccard', bin_method='MI_TO', metric_kwargs={}, binarization_kwargs={}
+    afm, layer='bin', distance_key='distances', seed=1234, method='UMAP', k=15, 
+    n_comps=2, ncores=8, metric='jaccard', bin_method='vanilla', metric_kwargs={}, binarization_kwargs={}
     ):
     """
     Reduce dimension of input Allelic Frequency Matrix.
@@ -157,14 +157,11 @@ def reduce_dimensions(
         X_reduced = find_diffusion_map(P_prime, D_left, n_eign=n_comps)
         feature_names = [ f'Diff{i}' for i in range(1, X_reduced.shape[1]+1)]
 
-    if any(afm.obs.columns.isin(feature_names)):
-        afm.obs = afm.obs.drop(columns=feature_names).copy()
+    for name in feature_names:
+        if name in afm.obs.columns:
+            afm.obs = afm.obs.drop(columns=name).copy()
 
-    afm.obs = afm.obs.join(
-        pd.DataFrame(X_reduced, columns=feature_names, index=afm.obs_names)
-    )
-
-
-
+    embs = pd.DataFrame(X_reduced, index=afm.obs_names, columns=feature_names)
+    afm.obs = pd.concat([afm.obs, embs], axis=1)
 
 

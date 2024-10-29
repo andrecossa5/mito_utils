@@ -39,7 +39,6 @@ def plot_ncells_nAD(afm, ax=None, title=None, xticks=None, yticks=None, s=5, c='
     """
 
     annotate_vars(afm, overwrite=True)
-
     ax.plot(afm.var['Variant_CellN'], afm.var['mean_AD_in_positives'], 'o', c=c, markersize=s, alpha=alpha, **kwargs)
     ax.set_yscale('log', base=2)
     ax.set_xscale('log', base=2)

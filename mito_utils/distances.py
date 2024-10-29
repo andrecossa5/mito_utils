@@ -48,19 +48,25 @@ def genotype_mixtures(AD, DP, t_prob=.75, t_vanilla=.001, min_AD=2, debug=False)
 ##
 
 
-def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=.001, min_AD=2, min_cell_prevalence=.1, debug=False):
+def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=0, min_AD=2, min_cell_prevalence=.1, debug=False):
     """
     Hybrid genotype calling strategy: if a mutation has prevalence (AD>=min_AD and AF>=t_vanilla) >= min_cell_prevalence,
     use probabilistic modeling as in 'bin_mixtures'. Else, use simple tresholding as in 'vanilla' method.
     """
     X = np.zeros(AD.shape)
+    n_binom = 0
+    
     for idx in range(AD.shape[1]):
-        test = (AD[:,idx]/(AD[:,idx]+.0000001)>t_vanilla) & (AD[:,idx]>=min_AD)
+        test = (AD[:,idx]/(DP[:,idx]+.0000001)>t_vanilla)
         prevalence = test.sum() / test.size
         if prevalence >= min_cell_prevalence:
             X[:,idx] = genotype_mix(AD[:,idx], DP[:,idx], t_prob=t_prob, t_vanilla=t_vanilla, min_AD=min_AD, debug=debug)
+            n_binom += 1
         else:
-            X[:,idx] = np.where(test, 1, 0)
+            X[:,idx] = np.where(test & (AD[:,idx]>=min_AD), 1, 0)
+
+    logging.info(f'n MT-SNVs genotyped with binomial mixtures: {n_binom}')
+
     return X
 
 
@@ -161,7 +167,7 @@ def call_genotypes(afm, bin_method='vanilla', t_vanilla=.0, min_AD=2, t_prob=.75
 
 
 def preprocess_feature_matrix(
-    afm, distance_key='distances', metric='jaccard', bin_method=None, binarization_kwargs={}
+    afm, distance_key='distances', metric='jaccard', bin_method=None, binarization_kwargs={}, precomputed=False
     ):
     """
     Preprocess a feature matrix for distancea computations.
@@ -179,9 +185,11 @@ def preprocess_feature_matrix(
         
     elif metric in discrete_metrics or metric in custom_discrete_metrics:
         logging.info(f'Preprocess feature matrix: metric={metric}, bin_method={bin_method}')
-        if 'bin' not in afm.layers:
-            layer = 'bin'
+        if 'bin' in afm.layers and precomputed:
+            pass
+        else:
             call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+        layer = 'bin'
 
     else:
         raise ValueError(f'Specify for a valid metric in {continuous_metrics}, {discrete_metrics} or {custom_discrete_metrics}')
@@ -204,7 +212,7 @@ def _get_metric_and_layer(afm, distance_key):
 
 
 def compute_distances(
-    afm, distance_key='distances', metric='jaccard', 
+    afm, distance_key='distances', metric='jaccard', precomputed_bin=False,
     bin_method='vanilla', ncores=1,  metric_kwargs={}, binarization_kwargs={}
     ):
     """
@@ -225,7 +233,7 @@ def compute_distances(
     """
     
     preprocess_feature_matrix(
-        afm, distance_key=distance_key, metric=metric, 
+        afm, distance_key=distance_key, metric=metric, precomputed=precomputed_bin,
         bin_method=bin_method, binarization_kwargs=binarization_kwargs
     )
 
