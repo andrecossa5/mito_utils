@@ -171,8 +171,8 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
 def build_tree(
     afm, precomputed=False, distance_key='distances', metric='jaccard', 
-    bin_method='MiTo', solver='NJ', ncores=1, min_n_positive_cells=2, max_frac_positive=.95,
-    metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}, filter_muts=True
+    bin_method='MiTo', solver='NJ', ncores=1, min_n_positive_cells=2, filter_muts=True,
+    max_frac_positive=.95, binarization_kwargs={}, solver_kwargs={},
     ):
     """
     Wrapper around CassiopeiaTree distance-based and maximum parsimony solvers.
@@ -190,8 +190,8 @@ def build_tree(
                 logging.info(f'Precomputed bin layer: bin_method={bin_method} and binarization_kwargs={binarization_kwargs}')
     else:
         compute_distances(
-            afm, distance_key=distance_key, metric=metric, bin_method=bin_method,
-            ncores=ncores, metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs
+            afm, distance_key=distance_key, metric=metric, 
+            bin_method=bin_method, ncores=ncores, binarization_kwargs=binarization_kwargs
         )
     M_raw, M, D = _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive, filter_muts=filter_muts)
  
