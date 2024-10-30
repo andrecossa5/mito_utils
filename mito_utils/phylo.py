@@ -171,7 +171,7 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
 def build_tree(
     afm, precomputed=False, distance_key='distances', metric='jaccard', 
-    bin_method='vanilla', solver='UPMGA', ncores=1, min_n_positive_cells=2, max_frac_positive=.95,
+    bin_method='vanilla', solver='NJ', ncores=1, min_n_positive_cells=2, max_frac_positive=.95,
     metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}, filter_muts=True
     ):
     """
