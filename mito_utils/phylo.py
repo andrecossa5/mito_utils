@@ -579,7 +579,7 @@ def CI(tree):
 
 def RI(tree):
     """
-    Calculate the Consistency Index (CI) of tree characters.
+    Calculate the Consistency Index (RI) of tree characters.
     """
     tree.reconstruct_ancestral_characters()
     observed_changes = np.zeros(tree.n_character)
@@ -671,7 +671,14 @@ def cut_and_annotate_tree(tree, n_clones=None):
     for mut in df_muts.index:
         candidate = df_muts.loc[mut,:].sort_values().index[1]
         node_variant_map[candidate] = mut
+    
+    # Add info to as node attributes
     mut_nodes = list(node_variant_map.keys())
+    for node in internal_nodes:
+        if node in mut_nodes:
+            tree.set_attribute(node, 'mut', True)
+        else:
+            tree.set_attribute(node, 'mut', False)
     node_assignment = pd.Series(node_variant_map).to_frame('mut')
     
     mutation_order = []
@@ -753,6 +760,32 @@ def cut_and_annotate_tree(tree, n_clones=None):
 
 
     return tree, mut_nodes, mutation_order
+
+
+##
+
+
+def get_supports(tree, subset=None):
+
+    L = []
+    for node in tree.internal_nodes:
+        if subset is not None:
+            if node in subset:
+                try:
+                    s = tree.get_attribute(node, 'support')
+                    s = s if s is not None else np.nan
+                    L.append(s)
+                except:
+                    pass
+        else:
+            try:
+                s = tree.get_attribute(node, 'support')
+                s = s if s is not None else np.nan
+                L.append(s)
+            except:
+                pass
+
+    return np.array(L)
 
 
 ##

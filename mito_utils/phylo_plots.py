@@ -408,29 +408,3 @@ def plot_tree(
 
 
 ##
-
-
-def get_supports(tree, subset=None):
-
-    L = []
-    for node in tree.internal_nodes:
-        if subset is not None:
-            if node in subset:
-                try:
-                    s = tree.get_attribute(node, 'support')
-                    s = s if s is not None else np.nan
-                    L.append(s)
-                except:
-                    pass
-        else:
-            try:
-                s = tree.get_attribute(node, 'support')
-                s = s if s is not None else np.nan
-                L.append(s)
-            except:
-                pass
-
-    return np.array(L)
-
-
-##
