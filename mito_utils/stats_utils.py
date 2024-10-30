@@ -188,9 +188,9 @@ def get_posteriors(ad, dp):
 ##
 
 
-def genotype_mix(ad, dp, t_prob=.75, t_vanilla=.05, debug=False, min_AD=2):
+def genotype_mix(ad, dp, t_prob=.7, t_vanilla=0, debug=False, min_AD=2):
     """
-    Derive a discrete genotype (1:'MUT', 0:'WT', -1:'undefined') for each cell, given the 
+    Derive a discrete genotype (1:'MUT', 0:'WT') for each cell, given the 
     AD and DP counts of one of its candidate mitochondrial variants.
     """
 
@@ -200,8 +200,8 @@ def genotype_mix(ad, dp, t_prob=.75, t_vanilla=.05, debug=False, min_AD=2):
         (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)) & (ad[positive_idx]>=min_AD), 
         (posterior_probs[:,1]<(1-t_prob)) & (posterior_probs[:,0]>t_prob) 
     ]
-    geno_prob = np.select(tests, [1,0], default=-1)
-    genotypes = -np.ones(ad.size, dtype=np.int16)
+    geno_prob = np.select(tests, [1,0], default=0)
+    genotypes = np.zeros(ad.size, dtype=np.int16)
     genotypes[positive_idx] = geno_prob
     
     # Compare to vanilla genotyping (AF>t --> 1, 0 otherwise)

@@ -19,17 +19,8 @@ from mito_utils.kNN import *
 ##
 
 
-def custom_MI_TO_jaccard(x,y):
-    mask = (x!=-1) & (y!=-1)
-    return jaccard(x[mask], y[mask])
-
-
-##
-
-
 discrete_metrics = PAIRWISE_BOOLEAN_FUNCTIONS 
 continuous_metrics = list(PAIRWISE_DISTANCE_FUNCTIONS.keys()) + ['correlation', 'sqeuclidean']
-custom_discrete_metrics = {'custom_MI_TO_jaccard':custom_MI_TO_jaccard}
 
 
 ##
@@ -48,7 +39,7 @@ def genotype_mixtures(AD, DP, t_prob=.75, t_vanilla=.001, min_AD=2, debug=False)
 ##
 
 
-def genotype_MI_TO(AD, DP, t_prob=.75, t_vanilla=0, min_AD=2, min_cell_prevalence=.1, debug=False):
+def genotype_MI_TO(AD, DP, t_prob=.7, t_vanilla=0, min_AD=2, min_cell_prevalence=.1, debug=False):
     """
     Hybrid genotype calling strategy: if a mutation has prevalence (AD>=min_AD and AF>=t_vanilla) >= min_cell_prevalence,
     use probabilistic modeling as in 'bin_mixtures'. Else, use simple tresholding as in 'vanilla' method.
@@ -183,29 +174,20 @@ def preprocess_feature_matrix(
         layer = 'scaled'
         afm.layers['scaled'] = csr_matrix(pp.scale(afm.X.A))
         
-    elif metric in discrete_metrics or metric in custom_discrete_metrics:
+    elif metric in discrete_metrics:
         logging.info(f'Preprocess feature matrix: metric={metric}, bin_method={bin_method}')
         if 'bin' in afm.layers and precomputed:
+            logging.info('Use precomputed bin layer...')
             pass
         else:
             call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
         layer = 'bin'
 
     else:
-        raise ValueError(f'Specify for a valid metric in {continuous_metrics}, {discrete_metrics} or {custom_discrete_metrics}')
+        raise ValueError(f'Specify for a valid metric in {continuous_metrics} or {discrete_metrics}')
 
     afm.uns['distance_calculations'][distance_key] = {'metric':metric}
     afm.uns['distance_calculations'][distance_key]['layer'] = layer
-
-
-##
-
-
-def _get_metric_and_layer(afm, distance_key):
-    layer = afm.uns['distance_calculations'][distance_key]['layer']
-    metric = afm.uns['distance_calculations'][distance_key]['metric']
-    metric = metric if metric not in custom_discrete_metrics else custom_discrete_metrics[metric]
-    return layer, metric
 
 
 ##
@@ -237,7 +219,8 @@ def compute_distances(
         bin_method=bin_method, binarization_kwargs=binarization_kwargs
     )
 
-    layer, metric = _get_metric_and_layer(afm, distance_key)
+    layer = afm.uns['distance_calculations'][distance_key]['layer']
+    metric = afm.uns['distance_calculations'][distance_key]['metric']
     X = afm.layers[layer].A.copy()
 
     logging.info(f'Compute distances: ncores={ncores}')
