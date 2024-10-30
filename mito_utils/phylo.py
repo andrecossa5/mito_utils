@@ -139,7 +139,7 @@ def jackknife_allele_tables(ad=None, dp=None, M=None):
 ##
 
 
-def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive):
+def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive, filter_muts=True):
     """
     Extract afm slots for CassiopeiaTree instantiation.
     """
@@ -156,11 +156,12 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
     # Remove variants from char matrix i) they are called in less than min_n_positive_cells or ii) > max_frac_positive 
     # We avoid recomputing distances as their contribution to the average pairwise cell-cell distance is minimal
-    test_germline = ((M==1).sum(axis=0) / M.shape[0]) <= max_frac_positive
-    test_too_rare = (M==1).sum(axis=0) >= min_n_positive_cells
-    test = (test_germline) & (test_too_rare)
-    M_raw = M_raw.loc[:,test].copy()
-    M = M.loc[:,test].copy()
+    if filter_muts:
+        test_germline = ((M==1).sum(axis=0) / M.shape[0]) <= max_frac_positive
+        test_too_rare = (M==1).sum(axis=0) >= min_n_positive_cells
+        test = (test_germline) & (test_too_rare)
+        M_raw = M_raw.loc[:,test].copy()
+        M = M.loc[:,test].copy()
 
     return M_raw, M, D
 
@@ -171,7 +172,7 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 def build_tree(
     afm, precomputed=False, distance_key='distances', metric='jaccard', 
     bin_method='vanilla', solver='UPMGA', ncores=1, min_n_positive_cells=2, max_frac_positive=.95,
-    metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}
+    metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}, filter_muts=True
     ):
     """
     Wrapper around CassiopeiaTree distance-based and maximum parsimony solvers.
@@ -187,7 +188,7 @@ def build_tree(
             afm, distance_key=distance_key, metric=metric, bin_method=bin_method,
             ncores=ncores, metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs
         )
-    M_raw, M, D = _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive)
+    M_raw, M, D = _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive, filter_muts=filter_muts)
  
     # Solve cell phylogeny
     metric = afm.uns['distance_calculations'][distance_key]['metric']
@@ -225,147 +226,6 @@ def get_clades(tree, with_root=True, with_singletons=False):
             clades[x] = frozenset([x])
 
     return clades
-
-
-##
-
-
-def compute_n_cells_clades(tree):
-    """
-    Find all clades in a tree, from top to bottom
-    """
-    clades = get_clades(tree)
-    cell_counts_df = (
-        pd.Series({k : len(clades[k]) for k in clades})
-        .sort_values(ascending=False)
-    )
-
-    return cell_counts_df
-
-
-##
-
-
-def calculate_FBP(obs_tree, tree_list):
-    """
-    Calculate Falsestein Bootstrap proportions.
-    """
-    obs_clades = get_clades(obs_tree, with_root=False)
-    supports = { k : 0 for k in obs_clades }
-
-    for boot_tree in tree_list:
-        b_ = get_clades(boot_tree, with_root=False).values()
-        for k in obs_clades:
-            if obs_clades[k] in b_:
-                supports[k] += 1
-
-    supports = pd.Series(supports)/len(tree_list)
-    supports = (supports * 100).astype(int)
-
-    return supports.to_dict()
-
-
-##
-
-
-def get_binary_clade(clade, leaves_order):
-    """
-    Get binary encoding of the clade bipartition.
-    """
-    bin_bool = np.array([ x in clade for x in leaves_order ])
-    sum_1 = np.sum(bin_bool)
-    sum_0 = bin_bool.size-sum_1
-
-    if sum_1>=sum_0:
-        v = bin_bool.astype(np.int0)
-    else:
-        v = (~bin_bool).astype(np.int0)
-
-    return v
-
-
-##
-
-
-def compute_TBE_hamming_one_tree(obs_clades, leaves_order, boot_tree, n_jobs=8):
-    """
-    Compute Transfer Support for all the observed clades, given one boot replicate.
-    """
-
-    boot_clades = get_clades(boot_tree, with_root=False, with_singletons=True)
-
-    OBS = np.array([ 
-        get_binary_clade(obs_clades[clade], leaves_order=leaves_order) \
-        for clade in obs_clades 
-    ]).astype(np.float16)
-    p = np.sum(OBS==0, axis=1)
-
-    BOOT = np.array([ 
-        get_binary_clade(boot_clades[clade], leaves_order=leaves_order) \
-        for clade in boot_clades 
-    ]).astype(np.float16)
-
-    D1 = pairwise_distances(OBS, BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
-    D2 = pairwise_distances((~OBS.astype(bool)).astype(np.int0), BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
-    D = np.minimum(D1, D2)
-    transfer_index = D.min(axis=1)
-
-    S = 1-transfer_index/(p-1)
-    S[np.where(S<0)] = 0  # Numerical issues with hamming distance rounding ecc.
-    S[np.where(S>1)] = 1  # Numerical issues with hamming distance rounding ecc.
-
-    return S
-
-
-##
-
-
-def calculate_TBE(obs_tree, tree_list, n_jobs=8):
-    """
-    Calculate TBE from Lamoine et al., 2018 and the definition of transfer distance
-    from the Hamming of clades bi-partition encodings.
-    """
-    leaves_order = obs_tree.leaves
-    obs_clades = get_clades(obs_tree, with_root=False)
-
-    supports = []
-    for boot_tree in tree_list:
-        supports.append(
-            compute_TBE_hamming_one_tree(
-                obs_clades, leaves_order, boot_tree, n_jobs=n_jobs
-            )
-        )
-    supports = pd.Series(np.mean(supports, axis=0), index=obs_clades.keys())
-    supports.loc[supports.isna()] = 0
-    supports = (supports * 100).astype(int)
-
-    return supports.to_dict()
-
-
-##
-
-
-def calculate_supports(obs_tree, tree_list, method='TBE', n_jobs=8):
-    """
-    Calculates internal nodes bootstrap support. Two algorithms
-    implemented:
-    - fbp: Falsestein Bootstrap Proportions, traditional support from Falsestein's work.
-    - tbe: Transfer Bootstrap Expectations, transfer distance-based method, suitable
-           for big phylogenies.
-    """
-
-    if method == 'FBP':
-        supports = calculate_FBP(obs_tree, tree_list)
-    elif method == 'TBE':
-        supports = calculate_TBE(obs_tree, tree_list, n_jobs=n_jobs)
-    else:
-        raise ValueError('No other method implemented so far...')
-
-    tree = obs_tree.copy()
-    for node in supports:
-        tree.set_attribute(node, 'support', supports[node])
-
-    return tree
 
 
 ##
@@ -765,25 +625,16 @@ def cut_and_annotate_tree(tree, n_clones=None):
 ##
 
 
-def get_supports(tree, subset=None):
+def get_supports(tree):
 
     L = []
     for node in tree.internal_nodes:
-        if subset is not None:
-            if node in subset:
-                try:
-                    s = tree.get_attribute(node, 'support')
-                    s = s if s is not None else np.nan
-                    L.append(s)
-                except:
-                    pass
-        else:
-            try:
-                s = tree.get_attribute(node, 'support')
-                s = s if s is not None else np.nan
-                L.append(s)
-            except:
-                pass
+        try:
+            s = tree.get_attribute(node, 'support')
+            s = s if s is not None else np.nan
+            L.append(s)
+        except:
+            pass
 
     return np.array(L)
 
@@ -791,7 +642,29 @@ def get_supports(tree, subset=None):
 ##
 
 
+def get_internal_node_stats(tree):
+    """
+    Get internal nodes supports, time, mut status and clade size
+    """
+
+    clades = get_clades(tree)
+    df = pd.DataFrame({
+        'support' : get_supports(tree), 
+        'time' : [ tree.get_time(node) for node in tree.internal_nodes ],
+        'mut' : [ tree.get_attribute(node, 'mut') for node in tree.internal_nodes ],
+        'clade_size' : [ len(clades[node]) for node in tree.internal_nodes ]
+        }, 
+        index=tree.internal_nodes
+    )
+    
+    return df 
+
+
+##
+
+
 ###################################### Deprecated code
+
 
 # def bootstrap_iteration(
 #     X=None, a=None, AD=None, DP=None, meta=None,
@@ -840,7 +713,144 @@ def get_supports(tree, subset=None):
 #         tree = build_tree(X=X, **tree_kwargs)
 # 
 #     return tree
-
+# 
+# 
+# def compute_n_cells_clades(tree):
+#     """
+#     Find all clades in a tree, from top to bottom
+#     """
+#     clades = get_clades(tree)
+#     cell_counts_df = (
+#         pd.Series({k : len(clades[k]) for k in clades})
+#         .sort_values(ascending=False)
+#     )
+# 
+#     return cell_counts_df
+# 
+# 
+# ##
+# 
+# 
+# def calculate_FBP(obs_tree, tree_list):
+#     """
+#     Calculate Falsestein Bootstrap proportions.
+#     """
+#     obs_clades = get_clades(obs_tree, with_root=False)
+#     supports = { k : 0 for k in obs_clades }
+# 
+#     for boot_tree in tree_list:
+#         b_ = get_clades(boot_tree, with_root=False).values()
+#         for k in obs_clades:
+#             if obs_clades[k] in b_:
+#                 supports[k] += 1
+# 
+#     supports = pd.Series(supports)/len(tree_list)
+#     supports = (supports * 100).astype(int)
+# 
+#     return supports.to_dict()
+# 
+# 
+# ##
+# 
+# 
+# def get_binary_clade(clade, leaves_order):
+#     """
+#     Get binary encoding of the clade bipartition.
+#     """
+#     bin_bool = np.array([ x in clade for x in leaves_order ])
+#     sum_1 = np.sum(bin_bool)
+#     sum_0 = bin_bool.size-sum_1
+# 
+#     if sum_1>=sum_0:
+#         v = bin_bool.astype(np.int0)
+#     else:
+#         v = (~bin_bool).astype(np.int0)
+# 
+#     return v
+# 
+# 
+# ##
+# 
+# 
+# def compute_TBE_hamming_one_tree(obs_clades, leaves_order, boot_tree, n_jobs=8):
+#     """
+#     Compute Transfer Support for all the observed clades, given one boot replicate.
+#     """
+# 
+#     boot_clades = get_clades(boot_tree, with_root=False, with_singletons=True)
+# 
+#     OBS = np.array([ 
+#         get_binary_clade(obs_clades[clade], leaves_order=leaves_order) \
+#         for clade in obs_clades 
+#     ]).astype(np.float16)
+#     p = np.sum(OBS==0, axis=1)
+# 
+#     BOOT = np.array([ 
+#         get_binary_clade(boot_clades[clade], leaves_order=leaves_order) \
+#         for clade in boot_clades 
+#     ]).astype(np.float16)
+# 
+#     D1 = pairwise_distances(OBS, BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
+#     D2 = pairwise_distances((~OBS.astype(bool)).astype(np.int0), BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
+#     D = np.minimum(D1, D2)
+#     transfer_index = D.min(axis=1)
+# 
+#     S = 1-transfer_index/(p-1)
+#     S[np.where(S<0)] = 0  # Numerical issues with hamming distance rounding ecc.
+#     S[np.where(S>1)] = 1  # Numerical issues with hamming distance rounding ecc.
+# 
+#     return S
+# 
+# 
+# ##
+# 
+# 
+# def calculate_TBE(obs_tree, tree_list, n_jobs=8):
+#     """
+#     Calculate TBE from Lamoine et al., 2018 and the definition of transfer distance
+#     from the Hamming of clades bi-partition encodings.
+#     """
+#     leaves_order = obs_tree.leaves
+#     obs_clades = get_clades(obs_tree, with_root=False)
+# 
+#     supports = []
+#     for boot_tree in tree_list:
+#         supports.append(
+#             compute_TBE_hamming_one_tree(
+#                 obs_clades, leaves_order, boot_tree, n_jobs=n_jobs
+#             )
+#         )
+#     supports = pd.Series(np.mean(supports, axis=0), index=obs_clades.keys())
+#     supports.loc[supports.isna()] = 0
+#     supports = (supports * 100).astype(int)
+# 
+#     return supports.to_dict()
+# 
+# 
+# ##
+# 
+# 
+# def calculate_supports(obs_tree, tree_list, method='TBE', n_jobs=8):
+#     """
+#     Calculates internal nodes bootstrap support. Two algorithms
+#     implemented:
+#     - fbp: Falsestein Bootstrap Proportions, traditional support from Falsestein's work.
+#     - tbe: Transfer Bootstrap Expectations, transfer distance-based method, suitable
+#            for big phylogenies.
+#     """
+# 
+#     if method == 'FBP':
+#         supports = calculate_FBP(obs_tree, tree_list)
+#     elif method == 'TBE':
+#         supports = calculate_TBE(obs_tree, tree_list, n_jobs=n_jobs)
+#     else:
+#         raise ValueError('No other method implemented so far...')
+# 
+#     tree = obs_tree.copy()
+#     for node in supports:
+#         tree.set_attribute(node, 'support', supports[node])
+# 
+#     return tree
 
 
 ##
