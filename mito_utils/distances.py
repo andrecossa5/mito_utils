@@ -184,7 +184,7 @@ def preprocess_feature_matrix(
         layer = 'bin'
 
     else:
-        raise ValueError(f'Specify for a valid metric in {continuous_metrics} or {discrete_metrics}')
+        raise ValueError(f'{metric} is not a valid metric! Specify for a valid metric in {continuous_metrics} or {discrete_metrics}')
 
     afm.uns['distance_calculations'][distance_key] = {'metric':metric}
     afm.uns['distance_calculations'][distance_key]['layer'] = layer
