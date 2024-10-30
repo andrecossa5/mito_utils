@@ -674,7 +674,7 @@ def cut_and_annotate_tree(tree, n_clones=None):
     
     # Add info to as node attributes
     mut_nodes = list(node_variant_map.keys())
-    for node in internal_nodes:
+    for node in tree.internal_nodes:
         if node in mut_nodes:
             tree.set_attribute(node, 'mut', True)
         else:
