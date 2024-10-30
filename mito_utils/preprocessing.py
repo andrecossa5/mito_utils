@@ -162,7 +162,7 @@ def compute_connectivity_metrics(X):
 
 
 def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
-                            bin_method='MI_TO', binarization_kwargs={}, tree_kwargs={}):
+                            bin_method='MiTo', binarization_kwargs={}, tree_kwargs={}):
     """
     Compute additional metrics on selected MT-SNVs feature space.
     """
@@ -233,9 +233,9 @@ def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
 
 def filter_afm(
     afm, lineage_column=None, min_cell_number=0, cells=None,
-    filtering='MI_TO', filtering_kwargs={}, max_AD_counts=2, variants=None,
+    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None,
     fit_mixtures=False, only_positive_deltaBIC=False, path_dbSNP=None, path_REDIdb=None, 
-    compute_enrichment=False, bin_method='MI_TO', binarization_kwargs={}, ncores=8,
+    compute_enrichment=False, bin_method='MiTo', binarization_kwargs={}, ncores=8,
     spatial_metrics=False, tree_kwargs={}, return_tree=False
     ):
     """
@@ -256,7 +256,7 @@ def filter_afm(
     cells : list, optional
         Pre-computed list of cells to subset. Default is `None`.
     filtering : str, optional
-        Filtering method to use. Default is `'MI_TO'`.
+        Filtering method to use. Default is `'MiTo'`.
 
         The following filtering strategies are implemented (tunable filtering kwargs that can be passed with the `filtering_kwargs` argument are highlighted as `{"kwarg": default_value}`):
 
@@ -285,7 +285,7 @@ def filter_afm(
 
         5. **'MQuad'**: Filter from Kwock et al., 2022.
 
-        6. **'MI_TO'**: Default filter, integrating aspects of 'miller2022' and 'weng2024'. Filters MT-SNVs with:
+        6. **'MiTo'**: Default filter, integrating aspects of 'miller2022' and 'weng2024'. Filters MT-SNVs with:
             - Mean MT-SNV consensus UMI base sequencing quality ≥ 30 (`min_var_quality`: `30`)
             - Fraction of negative cells >= 0.2 (`min_frac_negative`: `0.2`)
             - Number of positive cells ≥ 2 (`min_n_positive`: `2`)
@@ -297,7 +297,7 @@ def filter_afm(
             - afm.obs column for lineage annotation ('lineage_column': None)
             - FDR threshold for Fisher's Exact test ('fdr_treshold' : .1) 
             - Max number of lineages the MT-SNV can be enriched for ('n_enriched_groups' : 2) 
-            - Binarization strategy ('bin_method' : 'MI_TO')
+            - Binarization strategy ('bin_method' : 'MiTo')
             - **kwargs for bianrization ('binarization_kwargs' : {})
 
     filtering_kwargs : dict, optional
@@ -325,7 +325,7 @@ def filter_afm(
     compute_enrichment : bool, optional
         If `True`, compute MT-SNV enrichment in individual lineages from `lineage_column`. Default is `False`.
     bin_method : str, oprional 
-        Binarization strategy used for i) compute the final dataset statistics (i.e., mutation number, connectivity ecc) and ii) lineage enrichment. Default is `MI_TO`
+        Binarization strategy used for i) compute the final dataset statistics (i.e., mutation number, connectivity ecc) and ii) lineage enrichment. Default is `MiTo`
     binarization_kwargs : dict, optional
         Binarization strategy **kwargs (see mito_utils.distances.call_genotypes). Default is `{}`
     return_tree : boll, optional
@@ -370,8 +370,8 @@ def filter_afm(
             afm = filter_weng2024(afm, **filtering_kwargs)
         elif filtering == 'MQuad' and (test_pp or pp_method == 'cellsnp-lite'):
             afm = filter_MQuad(afm, ncores=ncores, path_=os.getcwd(), **filtering_kwargs)
-        elif filtering == 'MI_TO' and test_pp:
-            afm = filter_MI_TO(afm, **filtering_kwargs)
+        elif filtering == 'MiTo' and test_pp:
+            afm = filter_MiTo(afm, **filtering_kwargs)
         elif filtering == 'GT_enriched' and test_pp:
             afm = filter_GT_enriched(afm, lineage_column=lineage_column, **filtering_kwargs)
         else:

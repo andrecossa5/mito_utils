@@ -188,7 +188,7 @@ def get_posteriors(ad, dp):
 ##
 
 
-def genotype_mix(ad, dp, t_prob=.7, t_vanilla=0, debug=False, min_AD=2):
+def genotype_mix(ad, dp, t_prob=.7, t_vanilla=0, debug=False, min_AD=1):
     """
     Derive a discrete genotype (1:'MUT', 0:'WT') for each cell, given the 
     AD and DP counts of one of its candidate mitochondrial variants.
@@ -197,7 +197,7 @@ def genotype_mix(ad, dp, t_prob=.7, t_vanilla=0, debug=False, min_AD=2):
     positive_idx = np.where(dp>0)[0]
     posterior_probs = get_posteriors(ad[positive_idx], dp[positive_idx])
     tests = [ 
-        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)) & (ad[positive_idx]>=min_AD), 
+        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)), # & (ad[positive_idx]>=min_AD),  # REMOVE!!
         (posterior_probs[:,1]<(1-t_prob)) & (posterior_probs[:,0]>t_prob) 
     ]
     geno_prob = np.select(tests, [1,0], default=0)
@@ -206,7 +206,8 @@ def genotype_mix(ad, dp, t_prob=.7, t_vanilla=0, debug=False, min_AD=2):
     
     # Compare to vanilla genotyping (AF>t --> 1, 0 otherwise)
     if debug:
-        geno_vanilla = np.where((ad/dp>t_vanilla),1,0)
+        test = (ad/dp>t_vanilla) & (ad>=min_AD)
+        geno_vanilla = np.where(test,1,0)                        
         df = pd.DataFrame({
           'ad':ad, 'dp':dp, 'geno_vanilla':geno_vanilla, 'geno_prob':geno_prob, 
           'p0':posterior_probs[:,0], 'p1':posterior_probs[:,1]

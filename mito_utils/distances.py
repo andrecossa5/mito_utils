@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import sklearn.preprocessing as pp
 from scipy.sparse import csr_matrix
-from scipy.spatial.distance import jaccard
 from sklearn.metrics import pairwise_distances, recall_score, precision_score, auc
 from sklearn.metrics.pairwise import PAIRWISE_BOOLEAN_FUNCTIONS, PAIRWISE_DISTANCE_FUNCTIONS
 from mito_utils.filters import *
@@ -39,7 +38,7 @@ def genotype_mixtures(AD, DP, t_prob=.75, t_vanilla=.001, min_AD=2, debug=False)
 ##
 
 
-def genotype_MI_TO(AD, DP, t_prob=.7, t_vanilla=0, min_AD=2, min_cell_prevalence=.1, debug=False):
+def genotype_MiTo(AD, DP, t_prob=.7, t_vanilla=0, min_AD=1, min_cell_prevalence=.1, debug=False):
     """
     Hybrid genotype calling strategy: if a mutation has prevalence (AD>=min_AD and AF>=t_vanilla) >= min_cell_prevalence,
     use probabilistic modeling as in 'bin_mixtures'. Else, use simple tresholding as in 'vanilla' method.
@@ -81,8 +80,8 @@ def genotype_mixtures_smooth(AD, DP, t_prob=.75, k=10, gamma=.25, n_samples=100,
             params = model.fit((AD[:,idx], DP[:,idx]), max_iters=500, early_stop=True)
             AD_sample[:,idx] = model.sample(DP[:,idx])
 
-        D = compute_distances(AD=AD_sample, DP=DP, metric='custom_MI_TO_jaccard', 
-                              bin_method='MI_TO', binarization_kwargs={'t_prob':t_prob, 'min_AD':min_AD}, verbose=False)
+        D = compute_distances(AD=AD_sample, DP=DP, metric='jaccard', bin_method='MiTo', 
+                              binarization_kwargs={'t_prob':t_prob, 'min_AD':min_AD})
         L.append(D)
     D = np.mean(np.stack(L, axis=0), axis=0)
     index, _, _ = kNN_graph(D=D, k=k, from_distances=True)
@@ -116,9 +115,9 @@ def genotype_mixtures_smooth(AD, DP, t_prob=.75, k=10, gamma=.25, n_samples=100,
 ##
 
 
-def call_genotypes(afm, bin_method='vanilla', t_vanilla=.0, min_AD=2, t_prob=.75, min_cell_prevalence=.1, k=10, gamma=.25, n_samples=100):
+def call_genotypes(afm, bin_method='MiTo', t_vanilla=.0, min_AD=2, t_prob=.75, min_cell_prevalence=.1, k=10, gamma=.25, n_samples=100):
     """
-    Call genotypes using simple thresholding or th MI_TO binomial mixtures approachm (w/i or w/o kNN smoothing).
+    Call genotypes using simple thresholding or th MiTo binomial mixtures approachm (w/i or w/o kNN smoothing).
     """
 
     assert 'AD' in afm.layers and 'DP' in afm.layers
@@ -134,13 +133,13 @@ def call_genotypes(afm, bin_method='vanilla', t_vanilla=.0, min_AD=2, t_prob=.75
     elif bin_method == 'bin_mixtures_smooth':
         X = genotype_mixtures_smooth(AD, DP, t_prob=t_prob, k=k, gamma=gamma, 
                                      n_samples=n_samples, min_AD=min_AD)
-    elif bin_method == 'MI_TO':
-        X = genotype_MI_TO(AD, DP, t_prob=t_prob, t_vanilla=t_vanilla, 
+    elif bin_method == 'MiTo':
+        X = genotype_MiTo(AD, DP, t_prob=t_prob, t_vanilla=t_vanilla, 
                            min_AD=min_AD, min_cell_prevalence=min_cell_prevalence)
     else:
         raise ValueError("""
                 Provide one of the following genotype calling methods: 
-                vanilla, bin_mixtures, bin_mixtures_smooth, MI_TO
+                vanilla, bin_mixtures, bin_mixtures_smooth, MiTo
                 """
             )
 
@@ -158,30 +157,33 @@ def call_genotypes(afm, bin_method='vanilla', t_vanilla=.0, min_AD=2, t_prob=.75
 
 
 def preprocess_feature_matrix(
-    afm, distance_key='distances', metric='jaccard', bin_method=None, binarization_kwargs={}, precomputed=False
+    afm, distance_key='distances', precomputed=False, metric='jaccard', bin_method='MiTo', binarization_kwargs={}
     ):
     """
     Preprocess a feature matrix for distancea computations.
     """
-    
-    layer = 'bin'
-    logging.info('Updating afm.uns.genotyping')
-    afm.uns['genotyping'].update({'bin_method':bin_method, 'binarization_kwargs':binarization_kwargs})
+
+    layer = None
     afm.uns['distance_calculations'] = {}
 
     if metric in continuous_metrics:
-        logging.info(f'Preprocess feature matrix: metric={metric}')
         layer = 'scaled'
-        afm.layers['scaled'] = csr_matrix(pp.scale(afm.X.A))
+        if layer in afm.layers and precomputed:
+            logging.info('Use precomputed scaled layer...')
+        else:
+            logging.info('Scale raw AFs in afm.X')
+            afm.layers['scaled'] = csr_matrix(pp.scale(afm.X.A))
         
     elif metric in discrete_metrics:
-        logging.info(f'Preprocess feature matrix: metric={metric}, bin_method={bin_method}')
-        if 'bin' in afm.layers and precomputed:
-            logging.info('Use precomputed bin layer...')
-            pass
-        else:
-            call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
         layer = 'bin'
+        if layer in afm.layers and precomputed:
+            bin_method = afm.uns['genotyping']['bin_method']
+            binarization_kwargs = afm.uns['genotyping']['binarization_kwargs']
+            logging.info(f'Use precomputed bin layer: bin_method={bin_method}, binarization_kwargs={binarization_kwargs}')
+        else:
+            logging.info(f'Call genotypes with bin_method={bin_method}, binarization_kwargs={binarization_kwargs}: update afm.uns.genotyping')
+            afm.uns['genotyping'].update({'bin_method':bin_method, 'binarization_kwargs':binarization_kwargs})
+            call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
 
     else:
         raise ValueError(f'{metric} is not a valid metric! Specify for a valid metric in {continuous_metrics} or {discrete_metrics}')
@@ -193,9 +195,10 @@ def preprocess_feature_matrix(
 ##
 
 
+
 def compute_distances(
-    afm, distance_key='distances', metric='jaccard', precomputed_bin=False,
-    bin_method='vanilla', ncores=1,  metric_kwargs={}, binarization_kwargs={}
+    afm, distance_key='distances', metric='jaccard', precomputed=False,
+    bin_method='MiTo', binarization_kwargs={}, ncores=1,
     ):
     """
     Calculates pairwise cell--cell (or sample-) distances in some character space (e.g., MT-SNVs mutation space).
@@ -205,7 +208,7 @@ def compute_distances(
         distance_key (str, optional): Key in .obsp at which the new distances will be stored. Default: distances.
         metric ((str, callable), optional): distance metric. Default: 'jaccard'.
         bin_method (str, optional): method to binarize the provided character matrix, if the chosen metric 
-            involves comparison of discrete character vectors. Default: vanilla.
+            involves comparison of discrete character vectors. Default: MiTo.
         ncores (int, optional): n processors for parallel computation. Default: 8.
         metric_kwargs (dict, optional): **kwargs of the metric function. Default: {}.
         binarization_kwargs (dict, optional): **kwargs of the discretization function. Default: {}.
@@ -215,7 +218,7 @@ def compute_distances(
     """
     
     preprocess_feature_matrix(
-        afm, distance_key=distance_key, metric=metric, precomputed=precomputed_bin,
+        afm, distance_key=distance_key, metric=metric, precomputed=precomputed,
         bin_method=bin_method, binarization_kwargs=binarization_kwargs
     )
 
@@ -223,11 +226,9 @@ def compute_distances(
     metric = afm.uns['distance_calculations'][distance_key]['metric']
     X = afm.layers[layer].A.copy()
 
-    logging.info(f'Compute distances: ncores={ncores}')
-    D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False, **metric_kwargs)
+    logging.info(f'Compute distances: ncores={ncores}, metric={metric}')
+    D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False)
     afm.obsp[distance_key] = csr_matrix(D)
-    
-    afm.uns['distance_calculations'][distance_key].update(metric_kwargs)
     
 
 ##

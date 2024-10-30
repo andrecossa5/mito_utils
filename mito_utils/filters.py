@@ -21,7 +21,7 @@ filtering_options = [
     'miller2022', 
     'weng2024',
     'MQuad', 
-    'MI_TO',
+    'MiTo',
     'GT_enriched'
     # 'ludwig2019', 
     # 'velten2021', 
@@ -329,7 +329,7 @@ def filter_weng2024(
 ##
 
 
-def filter_MI_TO(
+def filter_MiTo(
     afm, 
     min_cov=10,
     min_var_quality=30,
@@ -341,7 +341,7 @@ def filter_MI_TO(
     min_mean_DP_in_positives=25
     ):
     """
-    MI_TO filter.
+    MiTo filter.
     """
     annotate_vars(afm, overwrite=True)
     afm.var['n_confidently_detected'] = np.sum(afm.X.A>=af_confident_detection, axis=0)
@@ -364,7 +364,7 @@ def filter_MI_TO(
 ##
 
 
-def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MI_TO', binarization_kwargs={}, alpha=.05):
+def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MiTo', binarization_kwargs={}, alpha=.05):
     """
     Compute -log10(FDR) Fisher's exact test: lineage biases of some mutation.
     """
@@ -425,7 +425,7 @@ def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MI_T
 
 
 def filter_GT_enriched(afm, lineage_column=None, fdr_treshold=.1, n_enriched_groups=2, 
-                       bin_method='MI_TO', binarization_kwargs={}):
+                       bin_method='MiTo', binarization_kwargs={}):
 
     """
     Given an afm matrix with a <cov> columns in .obs wich correspond to 

@@ -171,7 +171,7 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
 def build_tree(
     afm, precomputed=False, distance_key='distances', metric='jaccard', 
-    bin_method='vanilla', solver='NJ', ncores=1, min_n_positive_cells=2, max_frac_positive=.95,
+    bin_method='MiTo', solver='NJ', ncores=1, min_n_positive_cells=2, max_frac_positive=.95,
     metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}, filter_muts=True
     ):
     """
@@ -180,9 +180,14 @@ def build_tree(
     
     # Compute (if necessary, cell-cell distances, and retrieve necessary afm .slots)
     if precomputed:
-        if distance_key in afm.obsp:
-            if metric == afm.uns['distance_calculations'][distance_key]['metric']:
-                logging.info('Use precomputed distances...')
+        if distance_key in afm.obsp and precomputed:
+            metric = afm.uns['distance_calculations'][distance_key]['metric']
+            layer = afm.uns['distance_calculations'][distance_key]['layer']
+            logging.info(f'Use precomputed distances: metric={metric}, layer={layer}')
+            if layer == 'bin':
+                bin_method = afm.uns['genotyping']['bin_method']
+                binarization_kwargs = afm.uns['genotyping']['binarization_kwargs']
+                logging.info(f'Precomputed bin layer: bin_method={bin_method} and binarization_kwargs={binarization_kwargs}')
     else:
         compute_distances(
             afm, distance_key=distance_key, metric=metric, bin_method=bin_method,
@@ -253,7 +258,7 @@ def get_expanded_clones(tree, t=.05, min_depth=3, min_clade_size=None):
 ##
 
 
-def AFM_to_seqs(afm, bin_method='MI_TO', binarization_kwargs={}):
+def AFM_to_seqs(afm, bin_method='MiTo', binarization_kwargs={}):
     """
     Convert an AFM to a dictionary of sequences.
     """
@@ -282,86 +287,6 @@ def AFM_to_seqs(afm, bin_method='MI_TO', binarization_kwargs={}):
         d[cell] = ''.join(seq)
 
     return d
-
-
-##
-
-
-def get_internal_node_muts(tree, internal_node):
-    """
-    Get each internal node mutational status.
-    """
-    muts = tree.character_matrix.columns
-    node_state = np.array(tree.get_character_states(internal_node))
-    idx = np.where(node_state==1)[0]
-    muts = muts[idx].to_list()
-    return muts
-
-
-##
-
-
-def assess_internal_node_muts(a, clades, c, high_af=.05):
-    """
-    Assess the prevalence of all MT-SNVs assigned to a single internal node 
-    within its clade (p1), and outside of it (p0). Return useful stats.
-    """
-    cells = list(clades[c])
-    other_cells = a.obs_names[~a.obs_names.isin(cells)]
-    p1 = np.where(a[cells,:].X>=high_af,1,0).sum(axis=0) / len(cells)
-    p0 = np.where(a[other_cells, :].X>=high_af,1,0).sum(axis=0) / len(other_cells)
-    af1 = np.median(a[cells,:].X, axis=0)
-    af0 = np.median(a[other_cells, :].X, axis=0)
-    muts = a.var_names
-    top_mut = (
-        pd.DataFrame(
-            {'p1':p1,'p0':p0, 'median_af1':af1, 'median_af0':af0, 
-             'clade':[c]*len(muts), 'ncells':[len(cells)]*len(muts)}, 
-            index=muts
-        )
-        .assign(p_ratio=lambda x: x['p1']/x['p0']+.0001)
-        .assign(af_ratio=lambda x: x['median_af1']/x['median_af0']+.0001)
-        .query('median_af1>=@high_af and median_af0==0')
-        .sort_values('p_ratio', ascending=False)
-    )
-    return top_mut
-
-
-##
-
-
-def get_supporting_muts(tree, a, t=.05):
-    """
-    For each clade, rank its supporting mutations.
-    """
-    clades = get_clades(tree)
-    stats = []
-    for c in clades:
-        if c != 'root':
-            top_mut = assess_internal_node_muts(a, clades, c, high_af=t)
-            stats.append(top_mut)
-    final_muts = pd.concat(stats)
-    muts = final_muts.index.unique().tolist()
-        
-    return muts
-
-
-##
-
-
-def sort_muts(tree):
-    """
-    Sort all tree mutations for plotting,
-    """
-    muts = (
-        tree.cell_meta
-        .loc[tree.leaves]
-        .apply(lambda x: tree.cell_meta.columns[x.argmax()], axis=1)
-        .drop_duplicates()
-        .to_list()
-    )
-
-    return muts
 
 
 ##
@@ -471,7 +396,7 @@ def _resolve_node_assignment(x, times_d):
 ##
 
 
-def cut_and_annotate_tree(tree, n_clones=None):
+def MiToTreeAnnotator(tree, n_clones=None):
     """
     Cut a tree into discrete MT-clones, supported by one or more MT-SNV.
     1) Assign each variant to an internal node (lowest p-value among clades, Fisher's exact test)
@@ -851,6 +776,83 @@ def get_internal_node_stats(tree):
 #         tree.set_attribute(node, 'support', supports[node])
 # 
 #     return tree
+# 
+# 
+# def get_internal_node_muts(tree, internal_node):
+#     """
+#     Get each internal node mutational status.
+#     """
+#     muts = tree.character_matrix.columns
+#     node_state = np.array(tree.get_character_states(internal_node))
+#     idx = np.where(node_state==1)[0]
+#     muts = muts[idx].to_list()
+#     return muts
+# 
+# 
+# ##
+# 
+# 
+# def assess_internal_node_muts(a, clades, c, high_af=.05):
+#     """
+#     Assess the prevalence of all MT-SNVs assigned to a single internal node 
+#     within its clade (p1), and outside of it (p0). Return useful stats.
+#     """
+#     cells = list(clades[c])
+#     other_cells = a.obs_names[~a.obs_names.isin(cells)]
+#     p1 = np.where(a[cells,:].X>=high_af,1,0).sum(axis=0) / len(cells)
+#     p0 = np.where(a[other_cells, :].X>=high_af,1,0).sum(axis=0) / len(other_cells)
+#     af1 = np.median(a[cells,:].X, axis=0)
+#     af0 = np.median(a[other_cells, :].X, axis=0)
+#     muts = a.var_names
+#     top_mut = (
+#         pd.DataFrame(
+#             {'p1':p1,'p0':p0, 'median_af1':af1, 'median_af0':af0, 
+#              'clade':[c]*len(muts), 'ncells':[len(cells)]*len(muts)}, 
+#             index=muts
+#         )
+#         .assign(p_ratio=lambda x: x['p1']/x['p0']+.0001)
+#         .assign(af_ratio=lambda x: x['median_af1']/x['median_af0']+.0001)
+#         .query('median_af1>=@high_af and median_af0==0')
+#         .sort_values('p_ratio', ascending=False)
+#     )
+#     return top_mut
+# 
+# 
+# ##
+# 
+# 
+# def get_supporting_muts(tree, a, t=.05):
+#     """
+#     For each clade, rank its supporting mutations.
+#     """
+#     clades = get_clades(tree)
+#     stats = []
+#     for c in clades:
+#         if c != 'root':
+#             top_mut = assess_internal_node_muts(a, clades, c, high_af=t)
+#             stats.append(top_mut)
+#     final_muts = pd.concat(stats)
+#     muts = final_muts.index.unique().tolist()
+#         
+#     return muts
+# 
+# 
+# ##
+# 
+# 
+# def sort_muts(tree):
+#     """
+#     Sort all tree mutations for plotting,
+#     """
+#     muts = (
+#         tree.cell_meta
+#         .loc[tree.leaves]
+#         .apply(lambda x: tree.cell_meta.columns[x.argmax()], axis=1)
+#         .drop_duplicates()
+#         .to_list()
+#     )
+# 
+#     return muts
 
 
 ##
