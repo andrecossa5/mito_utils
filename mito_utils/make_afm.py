@@ -248,6 +248,7 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
         metrics['variant_basecalls_for_annot_cells'] = long.shape[0]
         logging.info(f'Unique variant basecalls for annotated cells: {long.shape[0]}')
     else:
+        cell_meta = None
         cells = list(long['cell'].unique())
  
     # Add site coverage
