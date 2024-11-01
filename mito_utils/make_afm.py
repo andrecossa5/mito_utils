@@ -274,6 +274,11 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
     qual = qual.loc[cells].copy()
     if path_meta is not None:
         cell_meta = cell_meta.loc[cells].copy()
+    else:
+        cell_meta = pd.DataFrame(index=cells)
+    
+    print(AD.head)
+    print(cell_meta.head)
  
     # At least one unique variant basecall for each cell
     assert (np.sum(DP>0, axis=1)>0).all()
@@ -303,7 +308,7 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
     qual = csr_matrix(qual.values).astype(np.int16)
     afm = AnnData(
         X=AF, 
-        obs=cell_meta if cell_meta is not None else pd.DataFrame(index=AD.index), 
+        obs=cell_meta, 
         var=char_meta, 
         layers={'AD':AD, 'DP':DP, 'qual':qual}, 
         uns={'pp_method':pp_method, 'raw_basecalls_metrics':metrics}
