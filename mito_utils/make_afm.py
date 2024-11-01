@@ -35,7 +35,7 @@ def mask_mt_sites(site_list):
 ##
 
 
-def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell_col='cell'):
+def read_from_AD_DP(path_ch_matrix, path_meta=None, sample=None, pp_method=None, cell_col='cell'):
     """
     Create AFM as as AnnData object from a path_ch_matrix folder with AD, DP tables. AD and DP columns must have:
     1) <cell_col> column; 2) <char> column; 3) AD/DP columns, respectively.
@@ -54,19 +54,23 @@ def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell
     """
 
     table = pd.read_csv(os.path.join(path_ch_matrix, 'allele_table.csv.gz'), index_col=0)
-    cell_meta = pd.read_csv(path_meta, index_col=0)
-    table['cell'] = table['cell'].map(lambda x: f'{x}_{sample}')
+    if path_meta is not None:
+        cell_meta = pd.read_csv(path_meta, index_col=0)
+    if sample is not None:
+        table['cell'] = table['cell'].map(lambda x: f'{x}_{sample}')
     table['MUT'] = table['POS'].astype(str) + '_' + table['REF'] + '>' + table['ALT']
     AD = table.pivot(index=cell_col, columns='MUT', values='AD').fillna(0)
     DP = table.pivot(index=cell_col, columns='MUT', values='DP').fillna(0)
-
-    cells = list(set(cell_meta.index) & set(DP.index))
-    AD = AD.loc[cells].copy()
-    DP = DP.loc[cells].copy()
-    cell_meta = cell_meta.loc[cells].copy()
+    
+    if cell_meta is not None:
+        cells = list(set(cell_meta.index) & set(DP.index))
+        AD = AD.loc[cells].copy()
+        DP = DP.loc[cells].copy()
+        cell_meta = cell_meta.loc[cells].copy()
+    else:
+        cell_meta = None
 
     assert (AD.index == DP.index).all()
-    assert (AD.index == cell_meta.index).all()
 
     char_meta = DP.columns.to_series().to_frame('mut')
     char_meta['pos'] = char_meta['mut'].map(lambda x: int(x.split('_')[0]))
@@ -87,7 +91,7 @@ def read_from_AD_DP(path_ch_matrix, path_meta, sample=None, pp_method=None, cell
 ##
 
 
-def read_from_cellsnp(path_ch_matrix, path_meta, sample=None, pp_method='cellsnp-lite'):
+def read_from_cellsnp(path_ch_matrix, path_meta=None, sample=None, pp_method='cellsnp-lite'):
     """
     Create AFM as as AnnData object from cellsnp output tables. The path_ch_matrix folder must contain the four default output from cellsnp-lite:
     * 1: 'cellSNP.tag.AD.mtx.gz'
@@ -102,20 +106,29 @@ def read_from_cellsnp(path_ch_matrix, path_meta, sample=None, pp_method='cellsnp
     path_vcf = os.path.join(path_ch_matrix, 'cellSNP.base.vcf.gz')
     path_cells = os.path.join(path_ch_matrix, 'cellSNP.samples.tsv.gz')
 
-    cells = [ f'{x}_{sample}' for x in pd.read_csv(path_cells, header=None)[0].to_list() ]
+    if sample is not None:
+        cells = [ f'{x}_{sample}' for x in pd.read_csv(path_cells, header=None)[0].to_list() ]
+    else:
+        cells = pd.read_csv(path_cells, header=None)[0].to_list()
+
     vcf = pd.read_csv(path_vcf, sep='\t', skiprows=1)
     variants = vcf['POS'].astype(str) + '_' + vcf['REF'] + '>' + vcf['ALT']
     AD = pd.DataFrame(mmread(path_AD).A.T, index=cells, columns=variants)
     DP = pd.DataFrame(mmread(path_DP).A.T, index=cells, columns=variants)
-    cell_meta = pd.read_csv(path_meta, index_col=0)
+    
+    if path_meta is not None:
+        cell_meta = pd.read_csv(path_meta, index_col=0)
+        cells = list(set(cell_meta.index) & set(DP.index))
+    else:
+        cell_meta = None
+        cells = list(set(DP.index))
 
-    cells = list(set(cell_meta.index) & set(DP.index))
     AD = AD.loc[cells].copy()
     DP = DP.loc[cells].copy()
-    cell_meta = cell_meta.loc[cells].copy()
+    if cell_meta is not None:
+        cell_meta = cell_meta.loc[cells].copy()
 
     assert (AD.index == DP.index).all()
-    assert (AD.index == cell_meta.index).all()
 
     char_meta = DP.columns.to_series().to_frame('mut')
     char_meta['pos'] = char_meta['mut'].map(lambda x: int(x.split('_')[0]))
@@ -234,12 +247,16 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
         long = long.query('cell in @cells').copy()
         metrics['variant_basecalls_for_annot_cells'] = long.shape[0]
         logging.info(f'Unique variant basecalls for annotated cells: {long.shape[0]}')
+    else:
+        cell_meta = None
+        cells = list(long['cell'].unique())
  
     # Add site coverage
     logging.info(f'Retrieve cell-site total coverage')
     cov = pd.read_csv(path_cov, header=None)
     cov.columns = ['pos', 'cell', 'DP']
-    cov['cell'] = cov['cell'].map(lambda x: f'{x}_{sample}')
+    if sample is not None:
+        cov['cell'] = cov['cell'].map(lambda x: f'{x}_{sample}')
     long = long.merge(cov, on=['pos', 'cell'], how='left')
   
     # Matrices
@@ -255,14 +272,14 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
     AD = AD.loc[cells].copy()
     DP = DP.loc[cells].copy()
     qual = qual.loc[cells].copy()
-    cell_meta = cell_meta.loc[cells].copy()
+    if path_meta is not None:
+        cell_meta = cell_meta.loc[cells].copy()
  
     # At least one unique variant basecall for each cell
     assert (np.sum(DP>0, axis=1)>0).all()
     assert (np.sum(DP>0, axis=1)>0).all() 
     assert (AD.index == DP.index).all()
     assert (AD.columns == DP.columns).all()
-    assert (AD.index == cell_meta.index).all()
  
     # Char and cell metadata
     char_meta = DP.columns.to_series().to_frame('mut')
@@ -326,7 +343,7 @@ def make_afm(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_prepro
         **kwargs
     """
 
-    if os.path.exists(path_ch_matrix) and os.path.exists(path_meta):
+    if os.path.exists(path_ch_matrix):
 
         logging.info(f'Allele Frequency Matrix from {pp_method} output')
         T = Timer()
@@ -344,7 +361,7 @@ def make_afm(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_prepro
         return afm
 
     else:
-        raise ValueError('Specify good path_ch_matrix and path_meta! ')
+        raise ValueError('Specify good path_ch_matrix! ')
 
 
 ##
