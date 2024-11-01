@@ -154,7 +154,7 @@ def sparse_from_long(df, covariate, nrow, ncol, cell_order):
 ##
 
 
-def read_from_scmito(path_ch_matrix, path_meta, sample=None, pp_method='maegatk'):
+def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_preprocessing'):
     """
     Create AFM as as AnnData object from cellsnp output tables. 
     The path_ch_matrix folder must contain the default output from mito_preprocessing/maegatk:
@@ -200,7 +200,8 @@ def read_from_scmito(path_ch_matrix, path_meta, sample=None, pp_method='maegatk'
     # Concat in long format
     logging.info(f'Format all basecalls in a long table')
     long = pd.concat(L)
-    long['cell'] = long['cell'].map(lambda x: f'{x}_{sample}')
+    if sample is not None:
+        long['cell'] = long['cell'].map(lambda x: f'{x}_{sample}')
 
     # Annotate ref and alt base calls
     long['ref'] = long['pos'].map(ref)
@@ -226,12 +227,13 @@ def read_from_scmito(path_ch_matrix, path_meta, sample=None, pp_method='maegatk'
     logging.info(f'Unique variant basecalls: {long.shape[0]}')
  
     # Filter basecalls of annotated cells only (i.e., we have cell metadata)
-    logging.info(f'Filter for annotated cells (i.e., sample CBs in cell_meta)')
-    cell_meta = pd.read_csv(path_meta, index_col=0)
-    cells = list(set(cell_meta.index) & set(long['cell'].unique()))
-    long = long.query('cell in @cells').copy()
-    metrics['variant_basecalls_for_annot_cells'] = long.shape[0]
-    logging.info(f'Unique variant basecalls for annotated cells: {long.shape[0]}')
+    if cell_meta is not None:
+        logging.info(f'Filter for annotated cells (i.e., sample CBs in cell_meta)')
+        cell_meta = pd.read_csv(path_meta, index_col=0)
+        cells = list(set(cell_meta.index) & set(long['cell'].unique()))
+        long = long.query('cell in @cells').copy()
+        metrics['variant_basecalls_for_annot_cells'] = long.shape[0]
+        logging.info(f'Unique variant basecalls for annotated cells: {long.shape[0]}')
  
     # Add site coverage
     logging.info(f'Retrieve cell-site total coverage')
@@ -311,7 +313,7 @@ def read_from_scmito(path_ch_matrix, path_meta, sample=None, pp_method='maegatk'
 ##
 
 
-def make_afm(path_ch_matrix, path_meta, sample=None, pp_method='mito_preprocessing'):
+def make_afm(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_preprocessing'):
     """
     
     Creates an annotated Allele Frequency Matrix from different preprocessing pipelines outputs.
