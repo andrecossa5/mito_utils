@@ -276,9 +276,6 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
         cell_meta = cell_meta.loc[cells].copy()
     else:
         cell_meta = pd.DataFrame(index=cells)
-    
-    print(AD.head)
-    print(cell_meta.head)
  
     # At least one unique variant basecall for each cell
     assert (np.sum(DP>0, axis=1)>0).all()

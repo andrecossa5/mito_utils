@@ -151,39 +151,39 @@ def MT_coverage_polar(df, var_subset=None, ax=None, n_xticks=6, xticks_size=7,
 ##
 
 
-def MT_coverage_by_gene_polar(afm, ax=None, sample=None):
+def MT_coverage_by_gene_polar(cov, sample=None, subset=None, ax=None):
     """
-    Plot log10 nUMIs coverare across MT-genome positions.
+    MT coverage, with annotated genes, in polar coordinates.
     """
+    
+    if subset is not None:
+        cov = cov.query('cell in @subset')
+    cov['pos'] = pd.Categorical(cov['pos'], categories=range(1,16569+1))
+    cov = cov.pivot_table(index='cell', columns='pos', values='n', dropna=False, fill_value=0)
 
     df_mt = pd.DataFrame(MAESTER_genes_positions, columns=['gene', 'start', 'end']).set_index('gene').sort_values('start')
-    x = np.mean(afm.layers['site_coverage'].A, axis=0)
 
-    test_sites = mask_mt_sites(afm)
-    median_target = np.median(np.median(afm.layers['site_coverage'].A[:,test_sites]), axis=0)
-    median_untarget = np.median(np.median(afm.layers['site_coverage'].A[:,~test_sites]), axis=0)
-
-    theta = np.linspace(0, 2*np.pi, len(x))
+    x = cov.mean(axis=0)
+    median_target = cov.loc[:,mask_mt_sites(cov.columns)].median(axis=0).median()
+    median_untarget = cov.loc[:,~mask_mt_sites(cov.columns)].median(axis=0).median()
+    theta = np.linspace(0, 2*np.pi, cov.shape[1])
     colors = { k:v for k,v in zip(df_mt.index, sc.pl.palettes.default_102[:df_mt.shape[0]])}
-
     ax.plot(theta, np.log10(x), '-', linewidth=.7, color='grey')
     idx = np.arange(1,x.size+1)
+
     for gene in colors:
         start, stop = df_mt.loc[gene, ['start', 'end']].values
         test = (idx>=start) & (idx<=stop)
         ax.plot(theta[test], np.log10(x[test]), color=colors[gene], linewidth=1.5)
 
-    ticks = [ 
-        int(round(x)) \
-        for x in np.linspace(1, afm.shape[1], 8) 
-    ][:7]
+    ticks = [ int(round(x)) for x in np.linspace(1, cov.shape[1], 8) ][:7]
     ax.set_theta_offset(np.pi/2)
     ax.set_xticks(np.linspace(0, 2*np.pi, 7, endpoint=False))
     ax.set_xticklabels(ticks)
     ax.xaxis.set_tick_params(labelsize=7)
     ax.yaxis.set_tick_params(labelsize=7)
     ax.set_rlabel_position(0) 
-    ax.set(xlabel='Position (bp)', title=f'{sample}\n n UMIs (median) target:{median_target:.2f}, untarget:{median_untarget:.2f}')
+    ax.set(xlabel='Position (bp)', title=f'{sample}\nTarget: {median_target:.2f}, untarget: {median_untarget:.2f}')
 
     return ax
 

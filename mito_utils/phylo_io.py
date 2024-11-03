@@ -52,7 +52,7 @@ def read_newick(path, X_raw=None, X_bin=None, D=None, meta=None) -> CassiopeiaTr
     for u, v, data in G.edges(data=True):
         length = data['length'] if 'length' in data else 0.0
         edge_list.append((u, v, length))
-    
+
     cells = [ x for x in G.nodes if not x.startswith('internal') ]
     cassiopeia_tree = CassiopeiaTree(
         tree=G, 
