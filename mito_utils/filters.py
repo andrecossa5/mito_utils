@@ -375,10 +375,12 @@ def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MiTo
     n = afm.shape[0]
     muts = afm.var_names
 
+    prevalences_array = np.zeros(muts.size)
     target_ratio_array = np.zeros(muts.size)
     oddsratio_array = np.zeros(muts.size)
     pvals = np.zeros(muts.size)
-    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+    if 'bin' not in afm.layers:
+        call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
     G = afm.layers['bin'].A.copy()
 
     # Here we go
@@ -388,6 +390,7 @@ def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MiTo
         test_lineage = afm.obs[lineage_column] == target_lineage
         mut_size = test_mut.sum()
         mut_lineage_size = (test_mut & test_lineage).sum()
+        prevalences_array[i] = mut_lineage_size / test_lineage.sum()
         target_ratio = mut_lineage_size / mut_size
         target_ratio_array[i] = target_ratio
         other_mut_lineage_size = (~test_mut & test_lineage).sum()
@@ -396,7 +399,7 @@ def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MiTo
         oddsratio, pvalue = fisher_exact(
             [
                 [mut_lineage_size, mut_size - mut_lineage_size],
-                [other_mut_lineage_size, n - other_mut_lineage_size],
+                [other_mut_lineage_size, n - mut_size - other_mut_lineage_size],
             ],
             alternative='greater',
         )
@@ -409,6 +412,7 @@ def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MiTo
     # Results
     results = (
         pd.DataFrame({
+            'prevalence' : prevalences_array,
             'perc_in_target_lineage' : target_ratio_array,
             'odds_ratio' : oddsratio_array,
             'FDR' : pvals,

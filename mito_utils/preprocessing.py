@@ -392,7 +392,10 @@ def filter_afm(
         logging.info(f'Filtering custom sets of cells and variants')
         rows = cells if cells is not None else afm.obs_names 
         cols = variants if variants is not None else afm.var_names 
-        afm = afm[rows,cols].copy()
+        afm = afm[
+            [x for x in rows if x in afm.obs_names],
+            [x for x in cols if x in afm.var_names]
+        ].copy()
         logging.info(f'Filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
 
     else:

@@ -438,7 +438,7 @@ def MiToTreeAnnotator(tree, n_clones=None):
             oddsratio, pvalue = fisher_exact(
                 [
                     [mut_lineage_size, mut_size - mut_lineage_size],
-                    [other_mut_lineage_size, n - other_mut_lineage_size],
+                    [other_mut_lineage_size, n - other_mut_lineage_size],       # NB: REVISE THIS
                 ],
                 alternative='greater',
             )

@@ -40,6 +40,52 @@ axins_pos = {
 ##
 
 
+
+def set_rcParams():
+    """
+    Applies Nature Methods journal-style settings for matplotlib figures.
+    """
+    plt.rcParams.update({
+
+        # Figure dimensions and DPI
+        # 'figure.figsize': (7, 3.5),  # Recommended size for 1-row, 2-column figure
+        # 'figure.dpi': 300,           # High DPI for print quality
+
+        # Font settings
+        # 'font.size': 7,                # Base font size
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial'],  # Preferred font for Nature figures
+
+        # Axes properties
+        # 'axes.titlesize': 8,           # Title font size
+        # 'axes.labelsize': 7,           # Label font size
+        # 'axes.linewidth': 0.5,         # Minimum line width for axes
+
+        # Tick properties
+        # 'xtick.labelsize': 6,
+        # 'ytick.labelsize': 6,
+        # 'xtick.direction': 'in',
+        # 'ytick.direction': 'in',
+        # 'xtick.major.size': 3,         # Major tick length
+        # 'ytick.major.size': 3,
+        # 'xtick.minor.size': 1.5,       # Minor tick length
+        # 'ytick.minor.size': 1.5,
+        # 'xtick.major.width': 0.5,      # Tick width
+        # 'ytick.major.width': 0.5,
+
+        # Legend properties
+        # 'legend.fontsize': 6,
+# 
+        # # Line properties
+        # 'lines.linewidth': 1,          # Line width for main data elements
+        # 'lines.markersize': 4,         # Marker size
+    })
+
+
+
+##
+
+
 def create_handles(categories, marker='o', colors=None, size=10, width=0.5):
     """
     Create quick and dirty circular and labels for legends.
