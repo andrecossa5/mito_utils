@@ -182,7 +182,6 @@ def preprocess_feature_matrix(
             logging.info(f'Use precomputed bin layer: bin_method={bin_method}, binarization_kwargs={binarization_kwargs}')
         else:
             logging.info(f'Call genotypes with bin_method={bin_method}, binarization_kwargs={binarization_kwargs}: update afm.uns.genotyping')
-            afm.uns['genotyping'].update({'bin_method':bin_method, 'binarization_kwargs':binarization_kwargs})
             call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
 
     else:

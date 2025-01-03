@@ -41,21 +41,21 @@ def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5,
                 mean_cov_all=20, median_cov_target=25, min_perc_covered_sites=.75):
     """
 
-    Read and format a complete Allele Frequency Matrix (follows the logic of Miller et al., 2022). 
+    Filter cells from MAESTER and redeem Allele Frequency Matrix (afm).
 
     Args:
-        afm (str): AnnData object prepared with mito_utils.make_afm.make.afm().
-        cell_subset (list-like, optional): desired subsets of cells.
-        cell_filter (str, optional): cell filter.
+        afm (str): AnnData object prepared with mito_utils.make_afm.make_afm() function.
+        cell_subset (list-like, optional): desired subset of cells ro retain.
+        cell_filter (str, optional): cell filtering strategy.
             1. **'filter1'**: Filter cells based on mean MT-genome coverage (all sites).
             2. **'filter2'**: Filter cells based on median target MT-sites coverage and min % of target sites covered.
         nmads (int, optional): n Minimum Absolute Deviations to filter cells with high MT-library UMI counts. Defaults to 5.
         mean_coverage (int, optional): minimum mean consensus (at least 3-supporting-reads) UMI coverage across MT-genome, per cell. Defaults to 20.
-        median_cov_target (int, optional): minimum median UMI coverage at target MT-sites. Defaults to 25.
-        min_perc_covered_sites (float, optional): minimum fraction of MT target sites covered. Defaults to .75.
+        median_cov_target (int, optional): minimum median UMI coverage at target MT-sites (only for MAESTER data). Defaults to 25.
+        min_perc_covered_sites (float, optional): minimum fraction of MT target sites covered (only for MAESTER data). Defaults to .75.
 
     Returns:
-        AnnData: Cell-filtered Allelic Frequency Matrix.
+        AnnData: Cell-filtered afm
     """
 
     if cell_subset is not None: 
@@ -63,36 +63,46 @@ def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5,
         logging.info(f'Filter provided cell subset. Valid CBs: {len(cells)}')
         afm = afm[cells,:].copy()
 
+    scLT_system = afm.uns['scLT_system']
+    logging.info(f'scLT system: {scLT_system}')
+
+    # Custom cell filters
     if cell_filter == 'filter1':
-        x = afm.obs['mean_site_coverage']       
-        median = np.median(x)
-        MAD = np.median(np.abs(x-median))
-        test = (x>=mean_cov_all) & (x<=median+nmads*MAD)
-        afm = afm[test,:].copy()                                      
-        logging.info(f'Filtered cells (i.e., mean MT-genome coverage >={mean_cov_all} and <={median+nmads*MAD:.2f}): {afm.shape[0]}')
+
+        if scLT_system == 'MAESTER' or scLT_system == 'redeem':
+            x = afm.obs['mean_site_coverage']       
+            median = np.median(x)
+            MAD = np.median(np.abs(x-median))
+            test = (x>=mean_cov_all) & (x<=median+nmads*MAD)
+            afm = afm[test,:].copy()                                      
+            logging.info(f'Filtered cells (i.e., mean MT-genome coverage >={mean_cov_all} and <={median+nmads*MAD:.2f}): {afm.shape[0]}')
+            afm.uns['cell_filter'] = {
+                'cell_subset':cell_subset,
+                'cell_filter':cell_filter,
+                'nmads':nmads, 
+                'mean_cov_all':mean_cov_all
+            }
+        else:
+            raise ValueError(f'Cell filter {cell_filter} is not available for scLT_system {scLT_system}')
 
     elif cell_filter == 'filter2':
-        test1 = afm.obs['median_target_site_coverage'] >= median_cov_target
-        test2 = afm.obs['frac_target_site_covered'] >= min_perc_covered_sites
-        afm = afm[(test1) & (test2),:].copy()                                  
-        logging.info(f'Filtered cells (i.e., median target MT-genome coverage >={median_cov_target} and fraction covered sites >={min_perc_covered_sites}: {afm.shape[0]}')
-
-    elif cell_filter == 'filter3':
-        test = np.mean(afm.layers['DP'].A, axis=1)>=20
-        afm = afm[test,:].copy()                                  
-        logging.info(f'Filtered cells (i.e., mean DP {mean_cov_all}): {afm.shape[0]}')
+        
+        if scLT_system == 'MAESTER': 
+            test1 = afm.obs['median_target_site_coverage'] >= median_cov_target
+            test2 = afm.obs['frac_target_site_covered'] >= min_perc_covered_sites
+            afm = afm[(test1) & (test2),:].copy()                                  
+            logging.info(f'Filtered cells (i.e., median target MT-genome coverage >={median_cov_target} and fraction covered sites >={min_perc_covered_sites}: {afm.shape[0]}')
+            afm.uns['cell_filter'] = {
+                'cell_subset':cell_subset,
+                'cell_filter':cell_filter,
+                'median_cov_target':median_cov_target, 
+                'min_perc_covered_sites':min_perc_covered_sites
+            }
+        else:
+            raise ValueError(f'Cell filter {cell_filter} is not available for scLT_system {scLT_system}')
     
-    elif cell_filter == 'no filter':
-        pass
-
-    afm.uns['cell_filter'] = {
-        'cell_subset':cell_subset,
-        'cell_filter':cell_filter,
-        'nmads':nmads, 
-        'mean_cov_all':mean_cov_all, 
-        'median_cov_target':median_cov_target,
-        'min_perc_covered_sites':min_perc_covered_sites
-    }
+    else:
+        logging.info(f'Skipping cell filters: {cell_filter} not available. Filtered cells: {afm.shape[0]}')
 
     # Ensure each site has been observed from at least one cell
     test_atleastone = np.sum(afm.X.A>0, axis=0)>0
@@ -110,18 +120,28 @@ def compute_metrics_raw(afm):
     """
 
     d = {}
+    scLT_system = afm.uns['scLT_system']
     pp_method = afm.uns['pp_method']
     
-    if pp_method in ['mito_preprocessing', 'maegatk']:
-        d['median_site_cov'] = afm.obs['median_target_site_coverage'].median()
-        d['median_target/untarget_coverage_logratio'] = np.median(
-            np.log10(
-                afm.obs['median_target_site_coverage'] / \
-                (afm.obs['median_untarget_site_coverage']+0.000001)
-            )
-        ).round(2)
+    # Compute general cell-site coverage metrics
+    if scLT_system == "MAESTER":
+
+        if pp_method in ['mito_preprocessing', 'maegatk']:
+            d['median_site_cov'] = afm.obs['median_target_site_coverage'].median()
+            d['median_target/untarget_coverage_logratio'] = np.median(
+                np.log10(
+                    afm.obs['median_target_site_coverage'] / \
+                    (afm.obs['median_untarget_site_coverage']+0.000001)
+                )
+            ).round(2)
+        else:
+            logging.info(f'Skip general metrics for pp_method {pp_method}.')
+
+    elif scLT_system == "redeem":
+        d['median_site_cov'] = afm.obs['mean_site_coverage'].median()
+    
     else:
-        logging.info(f'Skip general metrics for pp_method {pp_method}.')
+        logging.info(f'Skip raw metrics (scLT_system: {scLT_system}).')
 
     afm.uns['dataset_metrics'] = d
 
@@ -344,12 +364,14 @@ def filter_afm(
     annotate_vars(afm)
 
     logging.info(f'Filter MT-SNVs...')
+    scLT_system = afm.uns['scLT_system']
     pp_method = afm.uns['pp_method']
-    
+    logging.info(f'scLT_system: {scLT_system}')
+    logging.info(f'pp_method: {pp_method}')
     logging.info(f'Feature selection method: {filtering}')
     logging.info(f'Original afm: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
     
-    # Cells from clone with at least min_cell_number cells, if necessary
+    # Cells from <lineage_column> with at least min_cell_number cells, if necessary
     if min_cell_number>0 and lineage_column is not None:
         afm = filter_cell_clones(afm, column=lineage_column, min_cell_number=min_cell_number)
        
@@ -359,35 +381,22 @@ def filter_afm(
     
     if filtering in filtering_options:
 
-        test_pp = pp_method in ['maegatk', 'mito_preprocessing']
-        if filtering == 'baseline' and test_pp:
+        if filtering == 'baseline':
             pass
-        if filtering == 'CV' and test_pp:
+        if filtering == 'CV':
             afm = filter_CV(afm, **filtering_kwargs)
-        elif filtering == 'miller2022' and test_pp:
+        elif filtering == 'miller2022':
             afm = filter_miller2022(afm, **filtering_kwargs)
-        elif filtering == 'weng2024' and test_pp:
+        elif filtering == 'weng2024':
             afm = filter_weng2024(afm, **filtering_kwargs)
-        elif filtering == 'MQuad' and (test_pp or pp_method == 'cellsnp-lite'):
+        elif filtering == 'MQuad':
             afm = filter_MQuad(afm, ncores=ncores, path_=os.getcwd(), **filtering_kwargs)
-        elif filtering == 'MiTo' and test_pp:
+        elif filtering == 'MiTo':
             afm = filter_MiTo(afm, **filtering_kwargs)
-        elif filtering == 'GT_enriched' and test_pp:
+        elif filtering == 'GT_enriched':
             afm = filter_GT_enriched(afm, lineage_column=lineage_column, **filtering_kwargs)
-        else:
-            raise ValueError(
-                f'''The provided filtering method {filtering} is not supported for pp_method {pp_method}
-                    Choose another one...'''
-            )
 
-    elif pp_method in ['samtools', 'freebayes', 'cellsnp-lite'] and filtering is None:
-        
-        rows = cells if cells is not None else afm.obs_names 
-        cols = variants if variants is not None else afm.var_names 
-        afm = afm[rows,cols].copy()
-        logging.info(f'No further filter applied after baseline.')
-    
-    elif cells is not None or variants is not None:
+    elif filtering is None:
         
         logging.info(f'Filtering custom sets of cells and variants')
         rows = cells if cells is not None else afm.obs_names 
@@ -396,8 +405,7 @@ def filter_afm(
             [x for x in rows if x in afm.obs_names],
             [x for x in cols if x in afm.var_names]
         ].copy()
-        logging.info(f'Filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
-
+    
     else:
         raise ValueError(
                 f'''The provided filtering method {filtering} is not supported.

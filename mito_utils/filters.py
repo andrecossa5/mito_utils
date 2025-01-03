@@ -109,9 +109,8 @@ def annotate_vars(afm, overwrite=False):
 
     if 'site_coverage' in afm.layers:
         afm.var['mean_cov'] = afm.layers['site_coverage'].A.mean(axis=0)
+    if 'qual' in afm.layers:    # NB: not computed for redeem data
         afm.var['quality'] = np.nanmean(np.where(afm.layers['qual'].A>0, afm.layers['qual'].A, np.nan), axis=0)
-    else:
-        logging.info('Mean quality and coverage not annotated')
 
     # Calculate the number of cells that exceed VAF thresholds 0, 1, 5, 10, 50 as in Weng et al., 2024
 
@@ -148,23 +147,38 @@ def annotate_vars(afm, overwrite=False):
 
 def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, only_genes=True):
     """
-    Compute summary stats and filter baseline variants.
+    Compute summary stats and filter baseline MT-SNVs (MAESTER, redeem).
     """
 
-    if only_genes:
-        test_sites = mask_mt_sites(afm.var['pos'])
-        afm = afm[:,test_sites].copy()
+    scLT_system =  afm.uns['scLT_system']
+    pp_method =  afm.uns['pp_method']
 
-    # Basic filter as in Weng et al., 2024
-    if afm.uns['pp_method'] in ['mito_preprocessing', 'maegatk']:
+    if scLT_system == 'MAESTER':
+
+        if only_genes:
+            test_sites = mask_mt_sites(afm.var['pos'])
+            afm = afm[:,test_sites].copy()
+
+        # Basic filter as in Weng et al., 2024
+        if pp_method in ['mito_preprocessing', 'maegatk']:
+            test_baseline = (
+                (afm.var['mean_cov']>=min_site_cov) & \
+                (afm.var['quality']>=min_var_quality) & \
+                (afm.var['Variant_CellN']>=min_n_positive) 
+            )
+            afm = afm[:,test_baseline].copy()
+        else:
+            logging.info('Baseline filter only exlcudes MT-SNVs in un-targeted sites.')
+    
+    elif scLT_system == 'redeem':
         test_baseline = (
             (afm.var['mean_cov']>=min_site_cov) & \
-            (afm.var['quality']>=min_var_quality) & \
             (afm.var['Variant_CellN']>=min_n_positive) 
         )
         afm = afm[:,test_baseline].copy()
+
     else:
-        logging.info('Baseline filter only exlcudes MT-SNVs in un-targeted sites, and the ones with >1 ALT allele observed.')
+        raise ValueError(f'Baseline filter not available for scLT_system {scLT_system} and pp_method {pp_method}')
 
     # Exclude sites with more than one alt alleles observed
     var_sites = afm.var_names.map(lambda x: x.split('_')[0])
@@ -183,11 +197,21 @@ def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, o
 
 def filter_CV(afm, n_top=1000):
     """
-    Filter variants based on their coefficient of variation (CV).
+    Filter MT-SNVs (MAESTER, redeem) based on their coefficient of variation (CV).
     """
+
+    scLT_system = afm.uns['scLT_system']
+    pp_method = afm.uns['pp_method']
+
+    if scLT_system == 'MAESTER' and pp_method in ['mito_preprocessing', 'maegatk']:
+        pass
+    else:
+        raise ValueError(f'CV filter not available for scLT_system {scLT_system} and pp_method {pp_method}')
+
     CV = (np.std(afm.X.A, axis=0)**2 / np.mean(afm.X.A, axis=0))
     idx_vars = np.argsort(CV)[::-1][:n_top]
     afm = afm[:,idx_vars].copy()
+
     return afm
 
 
@@ -196,8 +220,16 @@ def filter_CV(afm, n_top=1000):
 
 def filter_miller2022(afm, min_site_cov=100, min_var_quality=30, p1=1, p2=99, perc1=0.01, perc2=0.1): 
     """
-    Filter variants based on adaptive tresholds adopted in Miller et al., 2022.
+    Filter MT-SNVs (MAESTER only) based on adaptive tresholds adopted in Miller et al., 2022.
     """
+
+    scLT_system = afm.uns['scLT_system']
+    pp_method = afm.uns['pp_method']
+
+    if scLT_system == 'MAESTER' and pp_method in ['mito_preprocessing', 'maegatk']:
+        pass
+    else:
+        raise ValueError(f'miller2022 filter not available for scLT_system {scLT_system} and pp_method {pp_method}')
 
     test = (
         (afm.var['mean_cov']>=min_site_cov) & \
@@ -215,11 +247,11 @@ def filter_miller2022(afm, min_site_cov=100, min_var_quality=30, p1=1, p2=99, pe
 
 def fit_MQuad_mixtures(afm, n_top=25, path_=None, ncores=8, minDP=10, minAD=1, with_M=False):
     """
-    Filter variants using the Mquad method.
+    Filter MT-SNVs (MAESTER, redeem) with the MQuad method (Kwock et al., 2022)
     """
-    # Prefilter again, if still too much
-    if n_top is not None:
-        afm = filter_CV(afm, n_top=1000)  
+
+    if n_top is not None:    
+        afm = filter_CV(afm, n_top=1000) # Prefilter again, if still too much MT-SNVs
 
     # Fit models
     M = Mquad(AD=afm.layers['AD'].T, DP=afm.layers['DP'].T)
@@ -239,9 +271,19 @@ def fit_MQuad_mixtures(afm, n_top=25, path_=None, ncores=8, minDP=10, minAD=1, w
 
 def filter_MQuad(afm, ncores=8, minDP=10, minAD=1, minCell=3, path_=None, n_top=None):
     """
-    Filter variants using the MQuad (Kwock 2022 et al.,) method.
+    Filter MT-SNVs (MAESTER, redeem) with the MQuad method (Kwock et al., 2022)
     """
 
+    scLT_system = afm.uns['scLT_system']
+    pp_method = afm.uns['pp_method']
+
+    if scLT_system == 'MAESTER' and pp_method in ['mito_preprocessing', 'maegatk']:
+        pass
+    elif scLT_system == 'redeem':
+        pass
+    else:
+        raise ValueError(f'MQuad filter not available for scLT_system {scLT_system} and pp_method {pp_method}')
+    
     _, M = fit_MQuad_mixtures(
         afm, n_top=n_top, path_=path_, ncores=ncores, minDP=minDP, minAD=minAD, with_M=True
     )
@@ -274,8 +316,16 @@ def filter_weng2024(
     min_cells_high_confidence_af=2,
     ):
     """
-    Calculate vars_df and select MT-vars, as in in Weng et al., 2024, and Miller et al. 2022 before.
+    Filter MT-SNVs (MAESTER only) as in in Weng et al., 2024, and Miller et al. 2022 before.
     """
+
+    scLT_system = afm.uns['scLT_system']
+    pp_method = afm.uns['pp_method']
+
+    if scLT_system == 'MAESTER' and pp_method in ['mito_preprocessing', 'maegatk']:
+        pass
+    else:
+        raise ValueError(f'weng2024 filter not available for scLT_system {scLT_system} and pp_method {pp_method}')
 
     # Filter Weng et al., 2024
 
@@ -341,21 +391,44 @@ def filter_MiTo(
     min_mean_DP_in_positives=25
     ):
     """
-    MiTo filter.
+    MiTo custom filter. Can be used for both MAESTER and redeem MT-SNVs.
     """
+
+    scLT_system = afm.uns['scLT_system']
+    pp_method = afm.uns['pp_method']
+
     annotate_vars(afm, overwrite=True)
     afm.var['n_confidently_detected'] = np.sum(afm.X.A>=af_confident_detection, axis=0)
 
-    test = (
-        (afm.var['mean_cov']>=min_cov) & \
-        (afm.var['quality']>=min_var_quality) & \
-        (afm.var['n0']>=min_frac_negative*afm.shape[0]) & \
-        (afm.var['Variant_CellN']>=min_n_positive) & \
-        (afm.var['n_confidently_detected']>=min_n_confidently_detected) & \
-        (afm.var['mean_AD_in_positives']>=min_mean_AD_in_positives) & \
-        (afm.var['mean_DP_in_positives']>=min_mean_DP_in_positives) 
-    )
-    afm = afm[:,test].copy()
+    if scLT_system == 'MAESTER':
+
+        if pp_method in ['mito_preprocessing', 'maegatk']:
+            test = (
+                (afm.var['mean_cov']>=min_cov) & \
+                (afm.var['quality']>=min_var_quality) & \
+                (afm.var['n0']>=min_frac_negative*afm.shape[0]) & \
+                (afm.var['Variant_CellN']>=min_n_positive) & \
+                (afm.var['n_confidently_detected']>=min_n_confidently_detected) & \
+                (afm.var['mean_AD_in_positives']>=min_mean_AD_in_positives) & \
+                (afm.var['mean_DP_in_positives']>=min_mean_DP_in_positives) 
+            )
+            afm = afm[:,test].copy()
+        else:
+            raise ValueError(f'MiTo filter not available for pp_method: {pp_method}')
+        
+    elif scLT_system == 'redeem':
+        test = (
+            (afm.var['mean_cov']>=min_cov) & \
+            (afm.var['n0']>=min_frac_negative*afm.shape[0]) & \
+            (afm.var['Variant_CellN']>=min_n_positive) & \
+            (afm.var['n_confidently_detected']>=min_n_confidently_detected) & \
+            (afm.var['mean_AD_in_positives']>=min_mean_AD_in_positives) & \
+            (afm.var['mean_DP_in_positives']>=min_mean_DP_in_positives) 
+        )
+        afm = afm[:,test].copy()
+    
+    else:
+        raise ValueError(f'MiTo filter not available for scLT_system: {scLT_system}')
 
     return afm
 

@@ -365,7 +365,7 @@ def make_afm(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_prepro
         return afm
 
     else:
-        raise ValueError('Specify good path_ch_matrix! ')
+        raise ValueError('Specify good path_ch_matrix!')
 
 
 ##
