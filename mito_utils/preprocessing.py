@@ -362,7 +362,7 @@ def filter_afm(
 
     logging.info(f'Filter MT-SNVs...')
     scLT_system = afm.uns['scLT_system']
-    pp_method = afm.uns['pp_method']
+    pp_method = afm.uns['pp_method'] if 'pp_method' in afm.uns else 'previously pre-processed (public data)'
     logging.info(f'scLT_system: {scLT_system}')
     logging.info(f'pp_method: {pp_method}')
     logging.info(f'Feature selection method: {filtering}')
