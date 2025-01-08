@@ -175,7 +175,7 @@ def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, o
         afm = afm[:,test_baseline].copy()
 
     else:
-        raise ValueError(f'Baseline filter not available for scLT_system {afm.uns["scLT_system"]} and pp_method {afm.uns["pp_method"]}')
+        raise ValueError(f'Baseline filter not available for scLT_system current scLT_system and pp_method')
 
     # Exclude sites with more than one alt alleles observed
     var_sites = afm.var_names.map(lambda x: x.split('_')[0])
