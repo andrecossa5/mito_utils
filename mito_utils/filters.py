@@ -167,7 +167,7 @@ def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, o
         else:
             logging.info('Baseline filter only exlcudes MT-SNVs in un-targeted sites.')
     
-    elif afm.uns['scLT_system'] == 'redeem':
+    elif afm.uns['scLT_system'] == 'RedeeM':
         test_baseline = (
             (afm.var['mean_cov']>=min_site_cov) & \
             (afm.var['Variant_CellN']>=min_n_positive) 
