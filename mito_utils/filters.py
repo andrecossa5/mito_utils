@@ -150,17 +150,14 @@ def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, o
     Compute summary stats and filter baseline MT-SNVs (MAESTER, redeem).
     """
 
-    scLT_system =  afm.uns['scLT_system']
-    pp_method =  afm.uns['pp_method']
-
-    if scLT_system == 'MAESTER':
+    if afm.uns['scLT_system'] == 'MAESTER':
 
         if only_genes:
             test_sites = mask_mt_sites(afm.var['pos'])
             afm = afm[:,test_sites].copy()
 
         # Basic filter as in Weng et al., 2024
-        if pp_method in ['mito_preprocessing', 'maegatk']:
+        if afm.uns['pp_method'] in ['mito_preprocessing', 'maegatk']:
             test_baseline = (
                 (afm.var['mean_cov']>=min_site_cov) & \
                 (afm.var['quality']>=min_var_quality) & \
@@ -170,7 +167,7 @@ def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, o
         else:
             logging.info('Baseline filter only exlcudes MT-SNVs in un-targeted sites.')
     
-    elif scLT_system == 'redeem':
+    elif afm.uns['scLT_system'] == 'redeem':
         test_baseline = (
             (afm.var['mean_cov']>=min_site_cov) & \
             (afm.var['Variant_CellN']>=min_n_positive) 
@@ -178,7 +175,7 @@ def filter_baseline(afm, min_site_cov=5, min_var_quality=30, min_n_positive=2, o
         afm = afm[:,test_baseline].copy()
 
     else:
-        raise ValueError(f'Baseline filter not available for scLT_system {scLT_system} and pp_method {pp_method}')
+        raise ValueError(f'Baseline filter not available for scLT_system {afm.uns["scLT_system"]} and pp_method {afm.uns["pp_method"]}')
 
     # Exclude sites with more than one alt alleles observed
     var_sites = afm.var_names.map(lambda x: x.split('_')[0])
