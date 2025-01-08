@@ -35,7 +35,7 @@ def mask_mt_sites(site_list):
 ##
 
 
-def read_from_AD_DP(path_ch_matrix, path_meta=None, sample=None, pp_method=None, cell_col='cell'):
+def read_from_AD_DP(path_ch_matrix, path_meta=None, sample=None, pp_method=None, cell_col='cell', scLT_system='MAESTER'):
     """
     Create AFM as as AnnData object from a path_ch_matrix folder with AD, DP tables. AD and DP columns must have:
     1) <cell_col> column; 2) <char> column; 3) AD/DP columns, respectively.
@@ -62,7 +62,7 @@ def read_from_AD_DP(path_ch_matrix, path_meta=None, sample=None, pp_method=None,
     AD = table.pivot(index=cell_col, columns='MUT', values='AD').fillna(0)
     DP = table.pivot(index=cell_col, columns='MUT', values='DP').fillna(0)
     
-    if cell_meta is not None:
+    if path_meta is not None and os.path.exists(path_meta):
         cells = list(set(cell_meta.index) & set(DP.index))
         AD = AD.loc[cells].copy()
         DP = DP.loc[cells].copy()
@@ -81,7 +81,7 @@ def read_from_AD_DP(path_ch_matrix, path_meta=None, sample=None, pp_method=None,
     AD = csr_matrix(AD.values).astype(np.int16)
     DP = csr_matrix(DP.values).astype(np.int16)
 
-    afm = AnnData(X=AF, obs=cell_meta, var=char_meta, layers={'AD':AD, 'DP':DP}, uns={'pp_method':pp_method})
+    afm = AnnData(X=AF, obs=cell_meta, var=char_meta, layers={'AD':AD, 'DP':DP}, uns={'pp_method':pp_method,'scLT_system':scLT_system})
     sorted_vars = afm.var['pos'].sort_values().index
     afm = afm[:,sorted_vars].copy()
 
@@ -91,7 +91,7 @@ def read_from_AD_DP(path_ch_matrix, path_meta=None, sample=None, pp_method=None,
 ##
 
 
-def read_from_cellsnp(path_ch_matrix, path_meta=None, sample=None, pp_method='cellsnp-lite'):
+def read_from_cellsnp(path_ch_matrix, path_meta=None, sample=None, pp_method='cellsnp-lite', scLT_system='MAESTER'):
     """
     Create AFM as as AnnData object from cellsnp output tables. The path_ch_matrix folder must contain the four default output from cellsnp-lite:
     * 1: 'cellSNP.tag.AD.mtx.gz'
@@ -116,7 +116,7 @@ def read_from_cellsnp(path_ch_matrix, path_meta=None, sample=None, pp_method='ce
     AD = pd.DataFrame(mmread(path_AD).A.T, index=cells, columns=variants)
     DP = pd.DataFrame(mmread(path_DP).A.T, index=cells, columns=variants)
     
-    if path_meta is not None:
+    if path_meta is not None and os.path.exists(path_meta):
         cell_meta = pd.read_csv(path_meta, index_col=0)
         cells = list(set(cell_meta.index) & set(DP.index))
     else:
@@ -140,7 +140,7 @@ def read_from_cellsnp(path_ch_matrix, path_meta=None, sample=None, pp_method='ce
     AD = csr_matrix(AD.values).astype(np.int16)
     DP = csr_matrix(DP.values).astype(np.int16)
 
-    afm = AnnData(X=AF, obs=cell_meta, var=char_meta, layers={'AD':AD, 'DP':DP}, uns={'pp_method':pp_method})
+    afm = AnnData(X=AF, obs=cell_meta, var=char_meta, layers={'AD':AD, 'DP':DP}, uns={'pp_method':pp_method,'scLT_system':scLT_system})
     sorted_vars = afm.var['pos'].sort_values().index
     afm = afm[:,sorted_vars].copy()
 
@@ -167,7 +167,7 @@ def sparse_from_long(df, covariate, nrow, ncol, cell_order):
 ##
 
 
-def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_preprocessing'):
+def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_preprocessing', scLT_system='MAESTER'):
     """
     Create AFM as as AnnData object from cellsnp output tables. 
     The path_ch_matrix folder must contain the default output from mito_preprocessing/maegatk:
@@ -272,7 +272,7 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
     AD = AD.loc[cells].copy()
     DP = DP.loc[cells].copy()
     qual = qual.loc[cells].copy()
-    if path_meta is not None:
+    if path_meta is not None and os.path.exists(path_meta):
         cell_meta = cell_meta.loc[cells].copy()
     else:
         cell_meta = pd.DataFrame(index=cells)
@@ -308,7 +308,7 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
         obs=cell_meta, 
         var=char_meta, 
         layers={'AD':AD, 'DP':DP, 'qual':qual}, 
-        uns={'pp_method':pp_method, 'raw_basecalls_metrics':metrics}
+        uns={'pp_method':pp_method, 'scLT_system':scLT_system, 'raw_basecalls_metrics':metrics}
     )
     sorted_vars = afm.var['pos'].sort_values().index
     assert sorted_vars.size == afm.shape[1]
@@ -334,133 +334,217 @@ def read_from_scmito(path_ch_matrix, path_meta=None, sample=None, pp_method='mit
 ##
 
 
-def make_afm(path_ch_matrix, path_meta=None, sample=None, pp_method='mito_preprocessing'):
+def read_redeem(path_ch_matrix, path_meta=None, sample=None, pp_method=None, scLT_system='RedeeM'):
     """
-    
-    Creates an annotated Allele Frequency Matrix from different preprocessing pipelines outputs.
+    Utility to assemble an AFM from RedeeM (Weng et al., 2024) MT-SNVs data.
+    """
+
+    # Check presence of all data tables in path_ch_matrix
+    files = ['QualifiedTotalCts.gz', 'filtered_basecalls.csv']
+    if any([ f not in os.listdir(path_ch_matrix) for f in files ]):
+        raise ValueError(f'Missing files! Check {path_ch_matrix} structure...')
+
+    # Filtered basecalls (redeemR v2: trimming, V4 filter and binomial modeling, cells with mean MT-genome coverage>=10)
+    basecalls = pd.read_csv(os.path.join(path_ch_matrix, 'filtered_basecalls.csv'), index_col=0)
+    basecalls.columns = ['genotype', 'cell', 'mut', 'AD', 'DP', 'type', 'context', 'AD_before_trim', 'AF']
+    basecalls['pos'] = basecalls['mut'].map(lambda x: x.split('_')[0])
+    basecalls['type'] = basecalls['type'].map(lambda x: x.replace('_', '>'))
+    basecalls = basecalls.drop(columns=['genotype']).assign(mut=lambda x: x['pos']+'_'+x['type'])
+    basecalls = basecalls[['cell', 'mut', 'AD', 'DP', 'AF']]
+
+    ## Raw cell-MT_genome position consensus UMI counts
+    cov = pd.read_csv(os.path.join(path_ch_matrix, 'QualifiedTotalCts.gz'), sep='\t', header=None)
+    cov.columns = ['cell', 'pos', 'total', 'less stringent', 'stringent', 'very stringent']
+    cov = (
+        ## Retain total coverage consensus UMI counts for DP values,
+        ## as in https://github.com/chenweng1991/redeemR/blob/master/R/VariantSummary.R
+        cov[['cell', 'pos', 'total']].rename(columns={'total':'DP'})        
+    )
+
+    # Handle cell meta, if present
+    if path_meta is not None and os.path.exists(path_meta):
+        cell_meta = pd.read_csv(path_meta, index_col=0)
+        cell_meta = cell_meta.query('sample==@sample').copy()
+        cells = list(set(cell_meta.index))
+        # Filter only good quality cells (Mean MT-total coverage >=10) as in redeemR (i.e., cells in filtered basecalls)
+        filtered_cells = list( set(basecalls['cell'].unique()) & set(cells) ) 
+    else:
+        cell_meta = pd.DataFrame({'mean_cov' : cov.groupby('cell')['DP'].mean()})
+        filtered_cells = list(set(basecalls['cell'].unique())) 
+
+    # Pivot filtered basecalls, and filter cell_meta and cov for cells
+    AD = basecalls.pivot(index='cell', columns='mut', values='AD').fillna(0).loc[filtered_cells].copy()
+    DP = basecalls.pivot(index='cell', columns='mut', values='DP').fillna(0).loc[filtered_cells].copy()
+    cell_meta = cell_meta.loc[filtered_cells].copy()
+
+    # Checks
+    assert (AD.index.value_counts()==1).all()
+    assert (np.sum(DP>0, axis=1)>0).all()
+    assert (np.sum(DP>0, axis=1)>0).all() 
+    assert (AD.index == DP.index).all()
+    assert (AD.columns == DP.columns).all()
+
+    # Char and cell metadata
+    char_meta = DP.columns.to_series().to_frame('mut')
+    char_meta['pos'] = char_meta['mut'].map(lambda x: int(x.split('_')[0]))
+    char_meta['ref'] = char_meta['mut'].map(lambda x: x.split('_')[1].split('>')[0])
+    char_meta['alt'] = char_meta['mut'].map(lambda x: x.split('_')[1].split('>')[1])
+    char_meta = char_meta[['pos', 'ref', 'alt']]
+
+    # Create sparse matrices, and store into the AnnData object
+    logging.info('Build AnnData object...')
+    AF = csr_matrix(np.divide(AD.values,(DP.values+.00000001)).astype(np.float32))
+    AD = csr_matrix(AD.values).astype(np.int16)
+    DP = csr_matrix(DP.values).astype(np.int16)
+    afm = AnnData(
+        X=AF, 
+        obs=cell_meta, 
+        var=char_meta, 
+        layers={'AD':AD, 'DP':DP}, 
+        uns={'pp_method':pp_method, 'scLT_system':scLT_system, 'raw_basecalls_metrics':None}
+    )
+    sorted_vars = afm.var['pos'].sort_values().index
+    assert sorted_vars.size == afm.shape[1]
+    afm = afm[:,sorted_vars].copy()
+
+    # Add complete site coverage info
+    logging.info('Add site-coverage matrix and cell-coverage metrics')
+    cov = cov.query('cell in @filtered_cells').pivot(index='cell', columns='pos', values='DP').fillna(0)
+    mapping = afm.var['pos'].to_dict()
+    df_ = pd.DataFrame({ mut : cov[mapping[mut]].values for mut in mapping }, index=filtered_cells)
+    assert all(df_.columns == afm.var_names)
+    afm.layers['site_coverage'] = csr_matrix(df_.values)
+    afm.obs['mean_site_coverage'] = cov.mean(axis=1)   
+
+    return afm
+
+
+##
+
+
+def read_cas9(path_ch_matrix, path_meta=None, sample=None, pp_method=None, scLT_system='Cas9'):
+    """
+    Utility to assemble an AFM from Cas9 (e.g. KP tracer mice data from Yang et al., 2022) data.
+    """
+
+    # Read pre-processed and encoded KP-tracer INDEL matrix
+    char_matrix = pd.read_csv(path_ch_matrix, sep='\t', index_col=0)
+    char_matrix = pd.DataFrame(
+        np.where(char_matrix!='-', char_matrix, -1).astype(np.int16),
+        index=char_matrix.index,
+        columns=char_matrix.columns   
+    )
+
+    # Handle cell meta, if present
+    if path_meta is not None and os.path.exists(path_meta):
+      cell_meta = pd.read_csv(path_meta, index_col=0)
+      cell_meta = cell_meta.query('sample==@sample').copy()
+      cells = list( set(cell_meta.index) & set(char_matrix.index) )
+      char_matrix = char_matrix.loc[cells,:].copy()
+      cell_meta = cell_meta.loc[cells,:].copy()
+    else:
+        logging.info('No cell-metadata present...')
+        cell_meta = pd.DataFrame(index=char_matrix.index)
+
+    afm = AnnData(
+        X=csr_matrix(char_matrix.values), 
+        obs=cell_meta, 
+        var=pd.DataFrame(index=char_matrix.columns),
+        uns={'pp_method':pp_method, 'scLT_system':scLT_system}
+    )
+
+    afm.layers['bin'] = afm.X.copy()
+
+    return afm
+
+
+##
+
+
+def read_scwgs(path_ch_matrix, path_meta=None, sample=None, pp_method=None, scLT_system='scWGS'):
+    """
+    Utility to assemble an AFM from RedeeM (Weng et al., 2024) MT-SNVs data.
+    """
+
+    # Read ch matrix
+    char_matrix = pd.read_csv(path_ch_matrix, index_col=0)
+
+    # Handle cell meta, if present
+    if path_meta is not None and os.path.exists(path_meta):
+      cell_meta = pd.read_csv(path_meta, index_col=0)
+      cell_meta = cell_meta.query('sample==@sample').copy()
+      cells = list( set(cell_meta.index) & set(char_matrix.index) )
+      char_matrix = char_matrix.loc[cells,:].copy()
+      cell_meta = cell_meta.loc[cells,:].copy()
+    else:
+        logging.info('No cell (i.e., single-cell colony) metadata present...')
+        cell_meta = pd.DataFrame(index=char_matrix.index)
+
+    afm = AnnData(
+        X=csr_matrix(char_matrix.values), 
+        obs=cell_meta, 
+        var=pd.DataFrame(index=char_matrix.columns),
+        uns={'pp_method':pp_method, 'scLT_system':scLT_system}
+    )
+    afm.uns['genotyping'] = {'layer':'bin', 'bin_method':None, 'binarization_kwargs':{}}
+    afm.layers['bin'] = afm.X.copy()
+
+    return afm
+
+
+##
+
+
+def make_afm(path_ch_matrix, path_meta=None, sample=None, pp_method='maegatk', scLT_system='MAESTER'):
+    """
+    Creates an annotated Allele Frequency Matrix from different scLT_system and pre-processing pipelines outputs.
 
     Args:
-        path_ch_matrix (str): Path to folder with necessary data.
-        path_meta (str): 
-        sample (str, optional): Sample name to append at preprocessed CBs. Defaults to None.
-        pp_method (str, optional): Preprocessing method (i.e., mito_preprocessing, maegatk, cellsnp-lite, freebayes, samtools). Defaults to 'mito_preprocessing'.
-        **kwargs
+        path_ch_matrix (str): Path to folder with necessary data for provided scLT_system.
+        path_meta (str): Path to .csv file with cell meta-data.
+        sample (str, optional): Sample name to append at preprocessed CBs. Default: None.
+        pp_method (str, optional): Preprocessing method (MAESTER data only). Available options: mito_preprocessing, maegatk, cellsnp-lite, freebayes, samtools. Defaults: 'maegatk'.
+        scLT_system (str, optional): scLT system (i.e., marker) used for tracing. Available options: MAESTER, RedeeM, Cas9, scWGS. Default: 'MAESTER'
     """
 
     if os.path.exists(path_ch_matrix):
 
-        logging.info(f'Allele Frequency Matrix from {pp_method} output')
+        logging.info(f'Allele Frequency Matrix generation: {scLT_system} system')
+
         T = Timer()
         T.start()
 
-        if pp_method in ['samtools', 'freebayes']:
-            afm = read_from_AD_DP(path_ch_matrix, path_meta, sample, pp_method)
-        elif pp_method == 'cellsnp-lite':
-            afm = read_from_cellsnp(path_ch_matrix, path_meta, sample, pp_method)
-        elif pp_method in ['mito_preprocessing', 'maegatk']:
-            afm = read_from_scmito(path_ch_matrix, path_meta, sample, pp_method)
+        if scLT_system == 'MAESTER':
+
+            logging.info(f'Pre-processing pipeline used: {pp_method}')
+
+            if pp_method in ['samtools', 'freebayes']:
+                afm = read_from_AD_DP(path_ch_matrix, path_meta, sample, pp_method, scLT_system)
+            elif pp_method == 'cellsnp-lite':
+                afm = read_from_cellsnp(path_ch_matrix, path_meta, sample, pp_method, scLT_system)
+            elif pp_method in ['mito_preprocessing', 'maegatk']:
+                afm = read_from_scmito(path_ch_matrix, path_meta, sample, pp_method, scLT_system)
+        
+        else:
+            
+            logging.info('Public dataset. Character matrix already pre-processed. Just assembling the AFM...')
+            logging.info('TODO: include (mito_preprocessing Nextflow pipeline) preprocessing entry-points for other scLT methods...')
+
+            if scLT_system == 'RedeeM':
+                afm = read_redeem(path_ch_matrix, path_meta, sample, pp_method, scLT_system)
+            elif scLT_system == 'Cas9':
+                afm = read_cas9(path_ch_matrix, path_meta, sample, pp_method, scLT_system)
+            elif scLT_system == 'scWGS':
+                afm = read_scwgs(path_ch_matrix, path_meta, sample, pp_method, scLT_system)
+            else:
+                raise ValueError(f'Unknown {scLT_system}. Check your inputs...')
         
         logging.info(f'Allele Frequency Matrix: cell x char {afm.shape}. {T.stop()}')
 
         return afm
 
     else:
-        raise ValueError('Specify good path_ch_matrix!')
+        raise ValueError('Specify a valid path_ch_matrix!')
 
 
 ##
-
-
-##################################### DEPRECATED FUNCTIONS
-
-# def create_one_base_tables(A, base, only_variants=True):
-#     """
-#     For one of the 4 possible DNA bases creates:
-#     * df_x: the allelic frequency (AF) table for that base (i.e., a cell x site, with values in [0,1])
-#     * df_qual: the average base-calling quality table for that base (i.e., cell x site, No value should be below 30, if already cleaned UMI counts)
-#     * df_cov: UMI counts table for that base (i.e., cell x site, with integers)
-#     """
-# 
-#     # AF
-#     cov = A.layers[f'{base}_counts_fw'].A + A.layers[f'{base}_counts_rev'].A
-#     X = cov / (A.layers['cov'].A + 0.000001)
-# 
-#     # Calculate the average quality (across both strands) for each base-site combination
-#     q = A.layers[f'{base}_qual_fw'].A + A.layers[f'{base}_qual_rev'].A
-#     m = np.where(A.layers[f'{base}_qual_fw'].A>0, 1, 0) + np.where(A.layers[f'{base}_qual_rev'].A>0, 1, 0)
-#     qual = np.round(q / (m + 0.000001))
-# 
-#     # Re-format
-#     ref_col = 'wt_allele' if 'wt_allele' in A.var.columns else 'ref'
-#     assert ref_col in A.var.columns
-#     A.var[ref_col] = A.var[ref_col].str.capitalize()
-#     variant_names = A.var.index + '_' + A.var[ref_col] + f'>{base}'
-#     df_x = pd.DataFrame(X, index=A.obs_names, columns=variant_names)
-#     df_qual = pd.DataFrame(qual, index=A.obs_names, columns=variant_names)
-#     df_cov = pd.DataFrame(cov, index=A.obs_names, columns=variant_names)
-#     gc.collect()
-# 
-#     if only_variants:
-#         test = (A.var[ref_col] != base).values
-#         return df_cov.loc[:, test], df_x.loc[:, test], df_qual.loc[:, test]
-#     else:
-#         return df_cov, df_x, df_qual
-
-
-##
-
-
-# def format_matrix(A, only_variants=True):
-#     """
-#     Create a full cell x variant AFM from the original AnnData storing all dataset tables.
-#     """
-#     
-#     # Clones to categorical, if present
-#     if 'GBC' in A.obs.columns:
-#         A.obs['GBC'] = pd.Categorical(A.obs['GBC'])
-# 
-#     # For each position and cell, compute each base AF and quality tables
-#     A_cov, A_x, A_qual = create_one_base_tables(A, 'A', only_variants=only_variants)
-#     C_cov, C_x, C_qual = create_one_base_tables(A, 'C', only_variants=only_variants)
-#     T_cov, T_x, T_qual = create_one_base_tables(A, 'T', only_variants=only_variants)
-#     G_cov, G_x, G_qual = create_one_base_tables(A, 'G', only_variants=only_variants)
-# 
-#     # Concat all of them in three complete coverage, AF and quality matrices, for each variant from the ref
-#     cov = pd.concat([A_cov, C_cov, T_cov, G_cov], axis=1)
-#     X = pd.concat([A_x, C_x, T_x, G_x], axis=1)
-#     qual = pd.concat([A_qual, C_qual, T_qual, G_qual], axis=1)
-# 
-#     # Reorder columns...
-#     variants = X.columns.map(lambda x: x.split('_')[0]).astype('int').values
-#     idx = np.argsort(variants)
-#     cov = cov.iloc[:, idx]
-#     X = X.iloc[:, idx]
-#     qual = qual.iloc[:, idx]
-# 
-#     # Create the per site quality matrix
-#     quality = np.zeros(A.shape)
-#     n_times = np.zeros(A.shape)
-#     for k in A.layers:
-#         if bool(re.search('qual', k)):
-#             quality += A.layers[k].A
-#             r, c = np.nonzero(A.layers[k].A)
-#             n_times[r, c] += 1
-#     quality = np.round(quality / (n_times + 0.0000001))
-# 
-#     # Create AnnData with variants and sites matrices
-#     afm = anndata.AnnData(X=X, obs=A.obs, dtype=np.float32)
-#     afm.layers['coverage'] = cov
-#     afm.layers['quality'] = qual
-# 
-#     # Per site slots, in 'uns'. Each matrix is a ncells x nsites matrix
-#     afm.uns['per_position_coverage'] = pd.DataFrame(
-#         A.layers['cov'].A, index=afm.obs_names, columns=A.var_names
-#     )
-#     afm.uns['per_position_quality'] = pd.DataFrame(
-#         quality, index=afm.obs_names, columns=A.var_names
-#     )
-#     gc.collect()
-#     
-#     return afm
-
-#####################################
