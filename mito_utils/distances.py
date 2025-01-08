@@ -167,7 +167,7 @@ def preprocess_feature_matrix(
     scLT_system = afm.uns['scLT_system'] 
     afm.uns['distance_calculations'] = {}
 
-    if scLT_system == 'SNVs':
+    if scLT_system in ['RedeeM', 'scWGS', 'MAESTER']:
 
         if metric in continuous_metrics:
             layer = 'scaled'
@@ -201,7 +201,7 @@ def preprocess_feature_matrix(
             else:
                 raise ValueError(f'With the {scLT_system} system, provide an AFM with Cas9 INDELS character matrix in afm.layers, under the "bin" key!')
     else:
-        raise ValueError(f'{scLT_system} is not a valid scLT system. Choose one between SNVs and Cas9.')
+        raise ValueError(f'{scLT_system} is not a valid scLT system. Choose one between MAESTER, scWGS, RedeeM, and Cas9.')
 
     afm.uns['distance_calculations'][distance_key] = {'metric':metric}
     afm.uns['distance_calculations'][distance_key]['layer'] = layer
