@@ -160,32 +160,48 @@ def preprocess_feature_matrix(
     afm, distance_key='distances', precomputed=False, metric='jaccard', bin_method='MiTo', binarization_kwargs={}
     ):
     """
-    Preprocess a feature matrix for distancea computations.
+    Preprocess a feature matrix for cell-cell distance computations.
     """
 
     layer = None
+    scLT_system = afm.uns['scLT_system'] 
     afm.uns['distance_calculations'] = {}
 
-    if metric in continuous_metrics:
-        layer = 'scaled'
-        if layer in afm.layers and precomputed:
-            logging.info('Use precomputed scaled layer...')
-        else:
-            logging.info('Scale raw AFs in afm.X')
-            afm.layers['scaled'] = csr_matrix(pp.scale(afm.X.A))
-        
-    elif metric in discrete_metrics:
-        layer = 'bin'
-        if layer in afm.layers and precomputed:
-            bin_method = afm.uns['genotyping']['bin_method']
-            binarization_kwargs = afm.uns['genotyping']['binarization_kwargs']
-            logging.info(f'Use precomputed bin layer: bin_method={bin_method}, binarization_kwargs={binarization_kwargs}')
-        else:
-            logging.info(f'Call genotypes with bin_method={bin_method}, binarization_kwargs={binarization_kwargs}: update afm.uns.genotyping')
-            call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+    if scLT_system == 'SNVs':
 
+        if metric in continuous_metrics:
+            layer = 'scaled'
+            if layer in afm.layers and precomputed:
+                logging.info('Use precomputed scaled layer...')
+            else:
+                logging.info('Scale raw AFs in afm.X')
+                afm.layers['scaled'] = csr_matrix(pp.scale(afm.X.A))
+
+        elif metric in discrete_metrics:
+            layer = 'bin'
+            if layer in afm.layers and precomputed:
+                bin_method = afm.uns['genotyping']['bin_method']
+                binarization_kwargs = afm.uns['genotyping']['binarization_kwargs']
+                logging.info(f'Use precomputed bin layer: bin_method={bin_method}, binarization_kwargs={binarization_kwargs}')
+            else:
+                logging.info(f'Call genotypes with bin_method={bin_method}, binarization_kwargs={binarization_kwargs}: update afm.uns.genotyping')
+                call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+
+        else:
+            raise ValueError(f'{metric} is not a valid metric! Specify for a valid metric in {continuous_metrics} or {discrete_metrics}')
+
+    elif scLT_system == 'Cas9':
+
+        if metric in continuous_metrics:
+            raise ValueError(f'For {scLT_system} only discrete metrics are available!')
+        elif metric in discrete_metrics:     
+            if 'bin' in afm.layers:
+                layer = 'bin'
+                logging.info(f'Use precomputed bin layer.')
+            else:
+                raise ValueError(f'With the {scLT_system} system, provide an AFM with Cas9 INDELS character matrix in afm.layers, under the "bin" key!')
     else:
-        raise ValueError(f'{metric} is not a valid metric! Specify for a valid metric in {continuous_metrics} or {discrete_metrics}')
+        raise ValueError(f'{scLT_system} is not a valid scLT system. Choose one between SNVs and Cas9.')
 
     afm.uns['distance_calculations'][distance_key] = {'metric':metric}
     afm.uns['distance_calculations'][distance_key]['layer'] = layer

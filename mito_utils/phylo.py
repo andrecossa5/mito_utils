@@ -156,7 +156,7 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
     # Remove variants from char matrix i) they are called in less than min_n_positive_cells or ii) > max_frac_positive 
     # We avoid recomputing distances as their contribution to the average pairwise cell-cell distance is minimal
-    if filter_muts:
+    if filter_muts and afm.uns['scLT_system'] == 'SNVs':
         test_germline = ((M==1).sum(axis=0) / M.shape[0]) <= max_frac_positive
         test_too_rare = (M==1).sum(axis=0) >= min_n_positive_cells
         test = (test_germline) & (test_too_rare)
