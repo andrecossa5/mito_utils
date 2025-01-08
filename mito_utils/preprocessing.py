@@ -41,14 +41,14 @@ def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5,
                 mean_cov_all=20, median_cov_target=25, min_perc_covered_sites=.75):
     """
 
-    Filter cells from MAESTER and redeem Allele Frequency Matrix (afm).
+    Filter cells from MAESTER and RedeeM Allele Frequency Matrix (afm).
 
     Args:
         afm (str): AnnData object prepared with mito_utils.make_afm.make_afm() function.
         cell_subset (list-like, optional): desired subset of cells ro retain.
         cell_filter (str, optional): cell filtering strategy.
             1. **'filter1'**: Filter cells based on mean MT-genome coverage (all sites).
-            2. **'filter2'**: Filter cells based on median target MT-sites coverage and min % of target sites covered.
+            2. **'filter2'**: Filter cells based on median target MT-sites coverage and min % of target sites covered (MAESTER only).
         nmads (int, optional): n Minimum Absolute Deviations to filter cells with high MT-library UMI counts. Defaults to 5.
         mean_coverage (int, optional): minimum mean consensus (at least 3-supporting-reads) UMI coverage across MT-genome, per cell. Defaults to 20.
         median_cov_target (int, optional): minimum median UMI coverage at target MT-sites (only for MAESTER data). Defaults to 25.
@@ -69,7 +69,7 @@ def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5,
     # Custom cell filters
     if cell_filter == 'filter1':
 
-        if scLT_system == 'MAESTER' or scLT_system == 'redeem':
+        if scLT_system == 'MAESTER' or scLT_system == 'RedeeM':
             x = afm.obs['mean_site_coverage']       
             median = np.median(x)
             MAD = np.median(np.abs(x-median))
@@ -118,15 +118,12 @@ def compute_metrics_raw(afm):
     """
     Compute raw dataset metrics and update .uns.
     """
-
-    d = {}
-    scLT_system = afm.uns['scLT_system']
-    pp_method = afm.uns['pp_method']
     
     # Compute general cell-site coverage metrics
-    if scLT_system == "MAESTER":
+    d = {}
+    if afm.uns["scLT_system"] == "MAESTER":
 
-        if pp_method in ['mito_preprocessing', 'maegatk']:
+        if afm.uns['pp_method'] in ['mito_preprocessing', 'maegatk']:
             d['median_site_cov'] = afm.obs['median_target_site_coverage'].median()
             d['median_target/untarget_coverage_logratio'] = np.median(
                 np.log10(
@@ -135,13 +132,13 @@ def compute_metrics_raw(afm):
                 )
             ).round(2)
         else:
-            logging.info(f'Skip general metrics for pp_method {pp_method}.')
+            logging.info(f'Skip general metrics for pp_method {afm.uns["pp_method"]}.')
 
-    elif scLT_system == "redeem":
+    elif afm.uns["scLT_system"] == "redeem":
         d['median_site_cov'] = afm.obs['mean_site_coverage'].median()
     
     else:
-        logging.info(f'Skip raw metrics (scLT_system: {scLT_system}).')
+        logging.info(f'Skip raw metrics (scLT_system: {afm.uns["scLT_system"]}).')
 
     afm.uns['dataset_metrics'] = d
 
