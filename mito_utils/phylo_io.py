@@ -5,7 +5,7 @@ I/O functions to read/write CassiopeiaTrees from annotated (supports) .newick st
 import anndata
 import pandas as pd
 from cassiopeia.data import CassiopeiaTree
-from Bio import Phylo
+from Bio.Phylo.NewickIO import Parser
 from io import StringIO
 import networkx as nx
 
@@ -25,7 +25,8 @@ def _add_edges(G, clade, parent=None, counter=[1]):
 
     G.add_node(node_name, support=clade.confidence)
     if parent:
-        G.add_edge(parent, node_name, length=clade.branch_length)
+        branch_length = clade.branch_length if clade.branch_length is not None else 1
+        G.add_edge(parent, node_name, length=branch_length)
     for child in clade.clades:
         _add_edges(G, child, node_name, counter)
 
@@ -37,9 +38,12 @@ def read_newick(path, X_raw=None, X_bin=None, D=None, meta=None) -> CassiopeiaTr
     """
     Read an newick string as a CassiopeiaTree object.
     """
+
     with open(path, 'r') as f:
-        newick = f.readlines()[0]
-    original_tree = Phylo.read(StringIO(newick), "newick")
+        newick = f.read().strip()
+
+    parser = Parser(StringIO(newick))
+    original_tree = list(parser.parse())[0]
 
     G = nx.DiGraph()
     _add_edges(G, original_tree.root, counter=[1])
@@ -48,16 +52,17 @@ def read_newick(path, X_raw=None, X_bin=None, D=None, meta=None) -> CassiopeiaTr
     for u, v, data in G.edges(data=True):
         length = data['length'] if 'length' in data else 0.0
         edge_list.append((u, v, length))
-       
+
+    cells = [ x for x in G.nodes if not x.startswith('internal') ]
     cassiopeia_tree = CassiopeiaTree(
         tree=G, 
-        character_matrix=X_bin, 
-        dissimilarity_map=D, 
-        cell_meta=meta
+        character_matrix=X_bin.loc[cells,:] if X_bin is not None else None, 
+        dissimilarity_map=D.loc[cells,cells] if D is not None else None, 
+        cell_meta=meta.loc[cells,:] if meta is not None else None
     )
     if X_raw is not None and X_bin is not None:
-        cassiopeia_tree.layers['raw'] = X_raw
-        cassiopeia_tree.layers['transformed'] = X_bin
+        cassiopeia_tree.layers['raw'] = X_raw.loc[cells,:]
+        cassiopeia_tree.layers['transformed'] = X_bin.loc[cells,:]
 
     for u, v, length in edge_list:
         cassiopeia_tree.set_branch_length(u, v, length)

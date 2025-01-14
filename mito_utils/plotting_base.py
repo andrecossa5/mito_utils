@@ -40,6 +40,52 @@ axins_pos = {
 ##
 
 
+
+def set_rcParams():
+    """
+    Applies Nature Methods journal-style settings for matplotlib figures.
+    """
+    plt.rcParams.update({
+
+        # Figure dimensions and DPI
+        # 'figure.figsize': (7, 3.5),  # Recommended size for 1-row, 2-column figure
+        # 'figure.dpi': 300,           # High DPI for print quality
+
+        # Font settings
+        # 'font.size': 7,                # Base font size
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial'],  # Preferred font for Nature figures
+
+        # Axes properties
+        # 'axes.titlesize': 8,           # Title font size
+        # 'axes.labelsize': 7,           # Label font size
+        # 'axes.linewidth': 0.5,         # Minimum line width for axes
+
+        # Tick properties
+        # 'xtick.labelsize': 6,
+        # 'ytick.labelsize': 6,
+        # 'xtick.direction': 'in',
+        # 'ytick.direction': 'in',
+        # 'xtick.major.size': 3,         # Major tick length
+        # 'ytick.major.size': 3,
+        # 'xtick.minor.size': 1.5,       # Minor tick length
+        # 'ytick.minor.size': 1.5,
+        # 'xtick.major.width': 0.5,      # Tick width
+        # 'ytick.major.width': 0.5,
+
+        # Legend properties
+        # 'legend.fontsize': 6,
+# 
+        # # Line properties
+        # 'lines.linewidth': 1,          # Line width for main data elements
+        # 'lines.markersize': 4,         # Marker size
+    })
+
+
+
+##
+
+
 def create_handles(categories, marker='o', colors=None, size=10, width=0.5):
     """
     Create quick and dirty circular and labels for legends.
@@ -188,7 +234,7 @@ def find_n_rows_n_cols(n_axes, n_cols=None):
 
 
 def format_ax(ax, title='', xlabel='', ylabel='', 
-    xticks=None, yticks=None, rotx=0, roty=0, 
+    xticks=None, yticks=None, rotx=0, roty=0, axis=True,
     xlabel_size=None, ylabel_size=None, xticks_size=None, 
     yticks_size=None, title_size=None, log=False, reduced_spines=False
     ):
@@ -225,6 +271,9 @@ def format_ax(ax, title='', xlabel='', ylabel='',
     
     if reduced_spines:
         ax.spines[['right', 'top']].set_visible(False)
+    
+    if not axis:
+        ax.axis('off')
 
     return ax
 
@@ -368,7 +417,7 @@ def bar(df, y, x=None, by=None, c='grey', s=0.35, a=1, l=None, ax=None,
 ##
 
 
-def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
+def box(df, x, y, by=None, c='grey', saturation=0.7, ax=None, with_stats=False,
     pairs=None, order=None, hue_order=None, kwargs={}):
     """
     Base box plot.
@@ -385,26 +434,26 @@ def box(df, x, y, by=None, c='grey', a=1, ax=None, with_stats=False,
     params = update_params(params, kwargs)
     
     if isinstance(c, str) and by is None:
-        sns.boxplot(data=df, x=x, y=y, color=c, ax=ax, saturation=0.7, order=order, **params) 
+        sns.boxplot(data=df, x=x, y=y, color=c, ax=ax, saturation=saturation, order=order, **params) 
         ax.set(xlabel='')
 
     elif isinstance(c, dict) and by is None:
         if all([ True if k in df[x].unique() else False for k in c.keys() ]):
             palette = [c[category] for category in order]
-            sns.boxplot(data=df, x=x, y=y, palette=palette, ax=ax, saturation=0.7, order=order, **params)
+            sns.boxplot(data=df, x=x, y=y, palette=palette, ax=ax, saturation=saturation, order=order, **params)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
             
     elif isinstance(c, dict) and by is not None:
         if all([ True if k in df[by].unique() else False for k in c.keys() ]):
-            sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, hue_order=hue_order, ax=ax, saturation=0.7, **params)
+            sns.boxplot(data=df, x=x, y=y, palette=c.values(), hue=by, hue_order=hue_order, ax=ax, saturation=saturation, **params)
             ax.legend([], [], frameon=False)
             ax.set(xlabel='')
         else:
             raise ValueError(f'{by} categories do not match provided colors keys')
     elif isinstance(c, str) and by is not None:
-        sns.boxplot(data=df, x=x, y=y, hue=by, hue_order=hue_order, ax=ax, saturation=0.7, **params)
+        sns.boxplot(data=df, x=x, y=y, hue=by, hue_order=hue_order, ax=ax, saturation=saturation, **params)
         ax.legend([], [], frameon=False)
         ax.set(xlabel='')
 

@@ -3,6 +3,7 @@ Discretization module.
 """
 
 import numpy as np
+import pandas as pd
 import scipy.stats as stats
 from scipy.optimize import minimize
 from scipy.special import logsumexp
@@ -187,30 +188,84 @@ def get_posteriors(ad, dp):
 ##
 
 
-def genotype_mix(ad, dp, t_prob=.75, t_vanilla=.05, debug=False, min_AD=2):
+def genotype_mix(ad, dp, t_prob=.7, t_vanilla=0, debug=False, min_AD=1):
     """
-    Derive a discrete genotype (1:'MUT', 0:'WT', -1:'undefined') for each cell, given the 
+    Derive a discrete genotype (1:'MUT', 0:'WT') for each cell, given the 
     AD and DP counts of one of its candidate mitochondrial variants.
     """
 
-    posterior_probs = get_posteriors(ad, dp)
+    positive_idx = np.where(dp>0)[0]
+    posterior_probs = get_posteriors(ad[positive_idx], dp[positive_idx])
     tests = [ 
-        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)) & (ad>=min_AD), 
+        (posterior_probs[:,1]>t_prob) & (posterior_probs[:,0]<(1-t_prob)), # & (ad[positive_idx]>=min_AD),  # REMOVE!!
         (posterior_probs[:,1]<(1-t_prob)) & (posterior_probs[:,0]>t_prob) 
     ]
-    geno_prob = np.select(tests, [1,0], default=-1)
+    geno_prob = np.select(tests, [1,0], default=0)
+    genotypes = np.zeros(ad.size, dtype=np.int16)
+    genotypes[positive_idx] = geno_prob
     
     # Compare to vanilla genotyping (AF>t --> 1, 0 otherwise)
     if debug:
-        geno_vanilla = np.where((ad/dp>t_vanilla),1,0)
+        test = (ad/dp>t_vanilla) & (ad>=min_AD)
+        geno_vanilla = np.where(test,1,0)                        
         df = pd.DataFrame({
-          'ad':ad, 'dp':dp, 'geno_vanilla':geno_vanilla, 'geno_prob':geno_prob, 
+          'ad':ad[positive_idx], 'dp':dp[positive_idx], 
+          'geno_vanilla':geno_vanilla[positive_idx], 
+          'geno_prob':geno_prob, 
           'p0':posterior_probs[:,0], 'p1':posterior_probs[:,1]
         })
         print(pd.crosstab(df['geno_vanilla'], df['geno_prob'], dropna=False))
         return df
     else:
-        return geno_prob
+        return genotypes
+
+
+##
+
+
+def get_posteriors_and_params(ad, dp):
+    
+    np.random.seed(1234)
+    model = MixtureBinomial(n_components=2, tor=1e-20)
+    model.fit((ad, dp), max_iters=500, early_stop=True)
+
+    ps = model.params[:2]
+    pis = model.params[2:]
+    idx1 = np.argmax(ps)
+    idx0 = 0 if idx1 == 1 else 1
+    p1 = ps[idx1]
+    p0 = ps[idx0]
+    pi1 = pis[idx1]
+    pi0 = pis[idx0]
+
+    return [p0,p1], [pi0,pi1]
+
+
+##
+
+
+def simulate_component_data(p, n_trials, n_samples):
+    return np.random.binomial(n=n_trials, p=p, size=n_samples)
+
+
+##
+
+
+def get_components(ad, dp):
+
+    ps, pis = get_posteriors_and_params(ad, dp)
+    p0, p1 = ps
+    pi0, pi1 = pis
+
+    n_samples = 10000
+    n_trials = int(np.mean(dp))
+    n_samples_0 = int(n_samples * pi0)
+    n_samples_1 = n_samples - n_samples_0
+
+    x_component_0 = simulate_component_data(p0, n_trials, n_samples_0)
+    x_component_1 = simulate_component_data(p1, n_trials, n_samples_1)
+
+    return x_component_0, x_component_1
 
 
 ##

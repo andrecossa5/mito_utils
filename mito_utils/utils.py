@@ -3,6 +3,7 @@ Miscellaneous utilities.
 """
 
 import os 
+import sys
 import re
 import time 
 import random
@@ -14,6 +15,16 @@ import logging
 import numpy as np
 import pandas as pd
 import scanpy as sc
+
+
+##
+
+
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Custom format
+)
 
 
 ##
@@ -79,22 +90,6 @@ def make_folder(path, name, overwrite=True):
 ##
 
 
-def set_logger(path, name, mode='w'):
-    """
-    A function to open a logs.txt file for a certain script, writing its trace at path_main/runs/step/.
-    """
-    logger = logging.getLogger("mito_benchmark")
-    handler = logging.FileHandler(os.path.join(path, name), mode=mode)
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-    logger.setLevel(logging.INFO)
-    logger.addHandler(handler)
-
-    return logger
-
-
-##
-
-
 def update_params(d_original, d_passed):
     for k in d_passed:
         if k in d_original:
@@ -154,138 +149,84 @@ def ji(x, y):
 ##
 
 
-def process_char_filtering_kwargs(path_filtering, filtering_key):
-    """
-    Processing the filtering options .json file.
-    """
-    with open(path_filtering, 'r') as file:
-        FILTERING_OPTIONS = json.load(file)
-    
-    if filtering_key in FILTERING_OPTIONS:
-        d = FILTERING_OPTIONS[filtering_key]
-        filtering = d['filtering']
-        filtering_kwargs = d['filtering_kwargs'] if 'filtering_kwargs' in d else {}
-        kwargs = { k : d[k] for k in d if k not in ['filtering', 'filtering_kwargs'] }
-        kwargs = {k: True if v == "True" else v for k, v in kwargs.items()}         # Nextflow and .json pain
-        kwargs = {k: False if v == "False" else v for k, v in kwargs.items()}
-    else:
-        raise KeyError(f'{filtering_key} not in {path_filtering}!')
-    
-    return filtering, filtering_kwargs, kwargs
-
-
-##
-
-
-def process_bin_kwargs(path_bin, bin_key):
-    """
-    Processing the filtering options .json file.
-    """
-    
-    with open(path_bin, 'r') as file:
-        BIN_OPTIONS = json.load(file)
-    
-    if bin_key in BIN_OPTIONS:
-        d = BIN_OPTIONS[bin_key]
-        bin_method = d['bin_method']
-        binarization_kwargs = d['binarization_kwargs'] if 'binarization_kwargs' in d else {}
-    else:
-        raise KeyError(f'{bin_key} not in {path_bin}!')
-    
-    return bin_method, binarization_kwargs
-
-
-##
-
-
-def process_kwargs(path, key):
-    """
-    Processing .json file.
-    """
-
-    with open(path, 'r') as file:
-        OPTIONS = json.load(file)
-    kwargs = OPTIONS[key] if key in OPTIONS else {}
-
-    return kwargs
-
-
-##
-
-
-def traverse_and_extract_flat(base_dir, file_name='annotated_tree.pickle'):
-
+def flatten_dict(d):
     result = {}
-    for root, _, files in os.walk(base_dir):
-        for file in files:
-            if file == file_name:
-                full_path = os.path.join(root, file)
-                
-                # Determine the file extension and load accordingly
-                if file_name.endswith('.pickle'):
-                    with open(full_path, 'rb') as f:
-                        data = pickle.load(f)
-                elif file_name.endswith('.csv'):
-                    data = pd.read_csv(full_path, index_col=0)
-                elif file_name.endswith('.txt.gz'):
-                    data = pd.read_csv(full_path, index_col=0, header=None)
-                else:
-                    raise ValueError(f"Unsupported file type: {file_name}")
-
-                # Extracting the relevant folder parts
-                relative_path = os.path.relpath(root, base_dir)
-                folder_parts = tuple(relative_path.split(os.sep))
-                
-                # Using tuple of folder parts as the key
-                result[folder_parts] = data
-
+    for key, value in d.items():
+        if isinstance(value, dict):
+            result.update(flatten_dict(value))
+        else:
+            result[key] = value
     return result
 
 
 ##
 
 
-def generate_job_id(id_length=20):
+def extract_one_dict(path, sample, job_id):
 
-    characters = string.ascii_letters + string.digits  # All uppercase, lowercase letters, and digits
-    random_id = ''.join(random.choices(characters, k=id_length))
-    random_id = f'job_{random_id}'
+    with open(path, 'rb') as f:
+        d = pickle.load(f)
 
-    return random_id
+    df_options = pd.Series(flatten_dict(d['options'])).to_frame('option_value').T.assign(sample=sample, job_id=job_id)
+    df_metrics = pd.Series(flatten_dict(d['metrics'])).to_frame('metric_value').T.assign(sample=sample, job_id=job_id)
+
+    return df_options, df_metrics
 
 
 ##
 
 
-def get_metrics(path, metric_pattern=None):
-    """
-    Retrieve metrics df.
-    """
-    L = []
-    for folder,_,files in os.walk(path):
+def format_results(path_results):
+
+    options = []
+    metrics = []
+
+    for folder, _, files in os.walk(path_results):
         for file in files:
-            if bool(re.search(metric_pattern, file)): 
-                sample = folder.split('/')[-2]
-                job_id = folder.split('/')[-1]
-                df = pd.read_csv(os.path.join(folder,file), index_col=0).assign(sample=sample)
-                if 'job_id' not in df.columns:
-                    df = df.assign(job_id=job_id)
-                df = df.rename(columns={'value':'metric_value'})
-                L.append(df)
-    df_metrics = pd.concat(L)
+            sample = folder.split('/')[-1]
+            job_id = file.split('_')[0]
+            try:
+                df_options, df_metrics = extract_one_dict(os.path.join(folder, file), sample, job_id)
+                options.append(df_options)
+                metrics.append(df_metrics)
+            except:
+                pass
 
-    L = []
-    for folder,_,files in os.walk(path):
-        for file in files:
-            if bool(re.search('ops', file)): 
-                df = pd.read_csv(os.path.join(folder,file), index_col=0)
-                df = df.rename(columns={'value':'option_value'})
-                L.append(df)
-    df_ops = pd.concat(L).pivot(index='job_id', columns='option', values='option_value').reset_index()
+    df_metrics = pd.concat(metrics).set_index(['job_id', 'sample'])
+    df_options = pd.concat(options).set_index(['job_id', 'sample'])
+    metrics = df_metrics.columns
+    options = df_options.columns
 
-    df = df_metrics.merge(df_ops, on='job_id')
+    df = df_metrics.join(df_options).reset_index()
 
-    return df
+    return df, metrics, options
+
+
+
+##
+
+
+def rank_items(df, groupings, metrics, weights, metric_annot):
+
+    df_agg = df.groupby(groupings, dropna=False)[metrics].mean().reset_index()
+
+    for metric_type in metric_annot:
+        colnames = []
+        for metric in metric_annot[metric_type]:
+            colnames.append(f'{metric}_rescaled')
+            if metric in ['n_dbSNP', 'n_REDIdb']:
+                df_agg[metric] = -df_agg[metric]
+            df_agg[f'{metric}_rescaled'] = (df_agg[metric] - df_agg[metric].min()) / \
+                                           (df_agg[metric].max() - df_agg[metric].min())
+
+        x = df_agg[colnames].mean(axis=1)
+        df_agg[f'{metric_type} score'] = (x - x.min()) / (x.max() - x.min())
+
+    x = np.sum(df_agg[ [ f'{k} score' for k in metric_annot ] ] * np.array([ weights[k] for k in metric_annot ]), axis=1)
+    df_agg['Overall score'] = (x - x.min()) / (x.max() - x.min())
+    df_agg = df_agg.sort_values('Overall score', ascending=False)
+
+    return df_agg
 
 
 ##

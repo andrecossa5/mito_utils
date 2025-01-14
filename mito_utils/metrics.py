@@ -6,6 +6,8 @@ from joblib import cpu_count, parallel_backend, Parallel, delayed
 import numpy as np
 import pandas as pd
 from scipy.stats import chi2
+from scipy.special import binom
+from sklearn.metrics import normalized_mutual_info_score
 
 
 
@@ -146,6 +148,35 @@ def NN_purity(index, labels):
         kNN_purities.append(np.sum(l_neighbors == l) / k)
     
     return np.median(kNN_purities)
+
+
+##
+
+
+def binom_sum(x, k=2):
+    return binom(x, k).sum()
+
+
+##
+
+
+def custom_ARI(g1, g2):
+    """
+    Compute scib modified ARI.
+    """
+
+    # Contingency table
+    n = len(g1)
+    contingency = pd.crosstab(g1, g2)
+
+    # Calculate and rescale ARI
+    ai_sum = binom_sum(contingency.sum(axis=0))
+    bi_sum = binom_sum(contingency.sum(axis=1))
+    index = binom_sum(np.ravel(contingency))
+    expected_index = ai_sum * bi_sum / binom_sum(n, 2)
+    max_index = 0.5 * (ai_sum + bi_sum)
+
+    return (index - expected_index) / (max_index - expected_index)
 
 
 ##

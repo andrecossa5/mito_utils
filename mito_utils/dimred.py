@@ -78,43 +78,90 @@ def _umap_from_X_conn(X, conn, ncomps=2, metric='cosine', metric_kwargs={}, seed
 ##
 
 
+def _get_X(afm, layer):
+
+    if layer in afm.layers:
+        logging.info(f'Use {layer} layer')
+        X = afm.layers[layer].A
+    else:
+        logging.info(f'{layer} layer not found. Fall back to scaled .X raw AF...')
+        X = pp.scale(afm.X.A)
+
+    return X
+
+
+##
+
+
+def _get_D(afm, distance_key, **kwargs):
+
+    if 'distance_calculations' in afm.uns:
+        if distance_key in afm.uns['distance_calculations']:
+            if afm.uns['distance_calculations'][distance_key]['metric'] == kwargs['metric']:
+                logging.info(f'Use precomputed {distance_key}')
+                D = afm.obsp[distance_key].A
+                return D
+            
+    compute_distances(afm, distance_key=distance_key, **kwargs)
+    D = afm.obsp[distance_key].A
+
+    return D
+
+
+##
+
+
 def reduce_dimensions(
-    X=None, a=None, AD=None, DP=None, seed=1234, method='UMAP', k=15, n_comps=30, 
-    metric='cosine', binary=True, bin_method='vanilla', scale=True, weights=None, metric_kwargs={}, binarization_kwargs={}
+    afm, layer='bin', distance_key='distances', seed=1234, method='UMAP', k=15, 
+    n_comps=2, ncores=8, metric='jaccard', bin_method='vanilla', metric_kwargs={}, binarization_kwargs={}
     ):
     """
-    Create a dimension-reduced representation of the input data matrix.
+    Reduce dimension of input Allelic Frequency Matrix.
+    
+    Args:
+        afm (_type_): _description_
+        layer (str, optional): _description_. Defaults to 'bin'.
+        distance_key (str, optional): _description_. Defaults to 'distances'.
+        seed (int, optional): _description_. Defaults to 1234.
+        method (str, optional): _description_. Defaults to 'UMAP'.
+        k (int, optional): _description_. Defaults to 15.
+        n_comps (int, optional): _description_. Defaults to 30.
+        metric (str, optional): _description_. Defaults to 'cosine'.
+        bin_method (str, optional): _description_. Defaults to 'vanilla'.
+        scale (bool, optional): _description_. Defaults to True.
+        metric_kwargs (dict, optional): _description_. Defaults to {}.
+        binarization_kwargs (dict, optional): _description_. Defaults to {}.
     """
 
-    # Prep kwargs
-    kwargs = dict(
-        X=X, a=a, AD=AD, DP=DP, metric=metric, binary=binary, bin_method=bin_method,
-        weights=weights, scale=scale, metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs
-    )
+    kwargs = dict(metric=metric, bin_method=bin_method, ncores=ncores,
+                  metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs)
     
-    # Reduce
     if method == 'PCA':
-        kwargs_ = { kwargs[k] for k in kwargs if k != 'metric_kwargs' }
-        metric, _, X = preprocess_feature_matrix(**kwargs_)
+
+        X = _get_X(afm, layer)
         X_reduced = find_pca(X, n_pcs=n_comps, random_state=seed)
         feature_names = [ f'PC{i}' for i in range(1, X_reduced.shape[1]+1)]
 
     elif method == 'UMAP':
-        D = compute_distances(**kwargs)
+
+        X = _get_X(afm, layer)
+        D = _get_D(afm, distance_key, **kwargs)
         _, _, conn = kNN_graph(D=D, k=k, from_distances=True)
         X_reduced = _umap_from_X_conn(X, conn, ncomps=n_comps, metric=metric, metric_kwargs=metric_kwargs, seed=seed)
         feature_names = [ f'UMAP{i}' for i in range(1, X_reduced.shape[1]+1)]
 
     elif method == 'diffmap':
-        D = compute_distances(**kwargs)
+
+        D = _get_D(afm, distance_key, **kwargs)
         P_prime, _,_,_, D_left = find_diffusion_matrix(D)
         X_reduced = find_diffusion_map(P_prime, D_left, n_eign=n_comps)
         feature_names = [ f'Diff{i}' for i in range(1, X_reduced.shape[1]+1)]
 
-    return pd.DataFrame(X_reduced, columns=feature_names)
+    for name in feature_names:
+        if name in afm.obs.columns:
+            afm.obs = afm.obs.drop(columns=name).copy()
 
-
-##
-
+    embs = pd.DataFrame(X_reduced, index=afm.obs_names, columns=feature_names)
+    afm.obs = pd.concat([afm.obs, embs], axis=1)
 
 

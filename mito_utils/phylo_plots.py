@@ -152,20 +152,27 @@ def _place_tree_and_annotations(
                     else:
                         raise ValueError(f'''Adjust categorical_cmaps. {feat}: 
                                          categorical_cmaps is nor a str, a list or a dict...''')
-                    if not all([ cat in categorical_cmap.keys() for cat in x.unique() ]):
-                        cats = x.unique()
-                        print(cats)
-                        missing_cats = cats[[ cat not in categorical_cmap.keys() for cat in cats ]]
-                        print(f'Missing cats in cmap for meta feat {feat}: {missing_cats}. Adding new colors...')
-                        for i,missing in enumerate(missing_cats):
-                            categorical_cmap[missing] = _categorical_cmaps[0][i]
-                        assert(all([ cat in categorical_cmap.keys() for cat in x.unique() ]))
                 else:
                     raise KeyError(f'{feat} not present in meta. Adjust categorical_cmaps and meta params...')
+            
+            if not all([ cat in categorical_cmap.keys() for cat in x.unique() ]):
+
+                cats = x.unique()
+                missing_cats = cats[[ cat not in categorical_cmap.keys() for cat in cats ]]
+                print(f'Missing cats in cmap for meta feat {feat}: {missing_cats}. Adding new colors...')
+
+                for i,missing in enumerate(missing_cats):
+                    categorical_cmap[missing] = _categorical_cmaps[0][i]
+
+            assert(all([ cat in categorical_cmap.keys() for cat in x.unique() ]))
+
+            x[x.isna()] = 'unassigned'
+            categorical_cmap.update({'unassigned':'grey'})
 
             boxes, anchor_coords = ut.place_colorstrip(
                 anchor_coords, width, tight_height, spacing, loc
             )
+            
             colorstrip = {}
             for leaf in x.index:
                 cat = x.loc[leaf]
@@ -361,7 +368,6 @@ def plot_tree(
         internal_node_subset = [ x for x in internal_node_subset if x in tree.internal_nodes ]
         internal_nodes = { node : internal_nodes[node] for node in internal_nodes if node in internal_node_subset }
  
-    # Here we go
     if feature_internal_nodes is not None:
         s = pd.Series({ node : tree.get_attribute(node, feature_internal_nodes) for node in internal_nodes })
         s.loc[lambda x: x.isna()] = 0 # Set missing values to 0
@@ -371,6 +377,12 @@ def plot_tree(
             cmap=cmap_internal_nodes, kwargs=_internal_node_kwargs,
             vmin=vmin_annot, vmax=vmax_annot
         )
+    # else:
+    #     if feature_internal_nodes is None and internal_node_subset is not None:
+    #         for node in tree.internal_nodes:
+    #             colors = 
+    #     else:
+    #         raise ValueError('')
         
     for node in internal_nodes:
         _dict = _internal_node_kwargs.copy()

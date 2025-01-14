@@ -36,77 +36,77 @@ def nans_as_zeros(afm):
 ##
 
 
-def make_AFM(path_afm, path_meta=None, cell_file=None, sample='MDA_clones', only_variants=True, cell_filter='filter1', 
-                    nmads=5, mean_cov_all=25, median_cov_target=30, min_perc_covered_sites=.75, is_covered_treshold=10):
+
+def filter_cells(afm, cell_subset=None, cell_filter='filter1', nmads=5, 
+                mean_cov_all=20, median_cov_target=25, min_perc_covered_sites=.75):
     """
-    Read and format a complete Allele Frequency Matrix (follows the logic of Miller et al., 2022). 
+
+    Filter cells from MAESTER and RedeeM Allele Frequency Matrix (afm).
 
     Args:
-        path_afm (str): path to AFM.h5ad, the collection of cell x site feature table output of mito_preprocessing
-        path_meta (str, optional): path to cells_meta.csv, cells_metadata for all valid CBs
-        cell_file (str, optional): path <txt.> file containing desired subsets of valid CBs present in cells metadata.
-        sample (str, optional): sample name. Defaults to 'MDA_clones'.
-        only_variants (bool, optional): Return AF of all possible site-bases or only variants from the rRCS MT-reference. Defaults to True.
-        cell_filter (str, optional): cell filter.
+        afm (str): AnnData object prepared with mito_utils.make_afm.make_afm() function.
+        cell_subset (list-like, optional): desired subset of cells ro retain.
+        cell_filter (str, optional): cell filtering strategy.
             1. **'filter1'**: Filter cells based on mean MT-genome coverage (all sites).
-            2. **'filter2'**: Filter cells based on median target MT-sites coverage and min % of target sites covered.
+            2. **'filter2'**: Filter cells based on median target MT-sites coverage and min % of target sites covered (MAESTER only).
         nmads (int, optional): n Minimum Absolute Deviations to filter cells with high MT-library UMI counts. Defaults to 5.
-        mean_coverage (int, optional): minimum mean consensus (at least 3-supporting-reads) UMI coverage across MT-genome, per cell. Defaults to 25.
-        median_cov_target (int, optional): minimum median UMI coverage at target MT-sites. Defaults to 30.
-        min_perc_covered_sites (float, optional): minimum fraction of MT target sites covered. Defaults to .75.
-        is_covered_treshold (int, optional): minimum n UMIs to consider a site covered. Default to 10.
+        mean_coverage (int, optional): minimum mean consensus (at least 3-supporting-reads) UMI coverage across MT-genome, per cell. Defaults to 20.
+        median_cov_target (int, optional): minimum median UMI coverage at target MT-sites (only for MAESTER data). Defaults to 25.
+        min_perc_covered_sites (float, optional): minimum fraction of MT target sites covered (only for MAESTER data). Defaults to .75.
 
     Returns:
-        AnnData: The complete, annotated Allelic Frequency Matrix of the sample.
+        AnnData: Cell-filtered afm
     """
 
-    print(f'Create the full cell x MT-SNV Allele Frequency Matrix (AFM)...')
+    if cell_subset is not None: 
+        cells = list(set(cell_subset) & set(afm.obs_names))
+        logging.info(f'Filter provided cell subset. Valid CBs: {len(cells)}')
+        afm = afm[cells,:].copy()
 
-    # Read mito_preprocessing output and filter only good quality CBs 
-    A = sc.read(path_afm)
+    scLT_system = afm.uns['scLT_system']
+    logging.info(f'scLT system: {scLT_system}')
 
-    if path_meta is not None:
-        meta = pd.read_csv(path_meta, index_col=0).query('sample==@sample')
-        valid_cbcs = set(A.obs_names) & set(meta.index)    
-    else:
-        meta = None
-        valid_cbcs = set(A.obs_names)
-    
-    if cell_file is not None: 
-        valid_cbcs = set(valid_cbcs) & set(pd.read_csv(cell_file, header=None)[0]) 
-
-    print(f'Valid CBs: {len(valid_cbcs)}')
-
-    cells = list(valid_cbcs)
-    A = A[cells,:].copy()
-    A.obs = meta.loc[cells] if meta is not None else A.obs      # Add meta info
-        
+    # Custom cell filters
     if cell_filter == 'filter1':
 
-        x = A.layers['cov'].A.mean(axis=1)       
-        median = np.median(x)
-        MAD = np.median(np.abs(x-median))
-        test = (x<=median+nmads*MAD) & (x>=mean_cov_all)  
-        A = A[test,:].copy()                                      
-
-        print(f'Filtered cells (i.e., mean MT-genome coverage >={mean_cov_all} and <={median+nmads*MAD:.2f}): {A.shape[0]}')
+        if scLT_system == 'MAESTER' or scLT_system == 'RedeeM':
+            x = afm.obs['mean_site_coverage']       
+            median = np.median(x)
+            MAD = np.median(np.abs(x-median))
+            test = (x>=mean_cov_all) & (x<=median+nmads*MAD)
+            afm = afm[test,:].copy()                                      
+            logging.info(f'Filtered cells (i.e., mean MT-genome coverage >={mean_cov_all} and <={median+nmads*MAD:.2f}): {afm.shape[0]}')
+            afm.uns['cell_filter'] = {
+                'cell_subset':cell_subset,
+                'cell_filter':cell_filter,
+                'nmads':nmads, 
+                'mean_cov_all':mean_cov_all
+            }
+        else:
+            raise ValueError(f'Cell filter {cell_filter} is not available for scLT_system {scLT_system}')
 
     elif cell_filter == 'filter2':
+        
+        if scLT_system == 'MAESTER': 
+            test1 = afm.obs['median_target_site_coverage'] >= median_cov_target
+            test2 = afm.obs['frac_target_site_covered'] >= min_perc_covered_sites
+            afm = afm[(test1) & (test2),:].copy()                                  
+            logging.info(f'Filtered cells (i.e., median target MT-genome coverage >={median_cov_target} and fraction covered sites >={min_perc_covered_sites}: {afm.shape[0]}')
+            afm.uns['cell_filter'] = {
+                'cell_subset':cell_subset,
+                'cell_filter':cell_filter,
+                'median_cov_target':median_cov_target, 
+                'min_perc_covered_sites':min_perc_covered_sites
+            }
+        else:
+            raise ValueError(f'Cell filter {cell_filter} is not available for scLT_system {scLT_system}')
+    
+    else:
+        logging.info(f'Skipping cell filters: {cell_filter} not available. Filtered cells: {afm.shape[0]}')
 
-        test_sites =  mask_mt_sites(A, raw_matrix=True)
-        test1 = np.median(A.layers['cov'].A[:,test_sites], axis=1) >= median_cov_target
-        test2 = np.sum(A.layers['cov'].A[:,test_sites]>=is_covered_treshold, axis=1) >= min_perc_covered_sites
-        A = A[(test1) & (test2),:].copy()                                  
-
-        print(f'Filtered cells (i.e., median target MT-genome coverage >={median_cov_target} and fraction covered sites >={min_perc_covered_sites}: {A.shape[0]}')
-
-    # Format a complete AFM
-    afm = format_matrix(A, only_variants=only_variants)
-    afm.obs = afm.obs.assign(
-        sample=sample, 
-        nUMIs_MAESTER=afm.layers['coverage'].sum(axis=1),
-        mean_nUMIs_MAESTER=afm.layers['coverage'].mean(axis=1),
-    )
+    # Ensure each site has been observed from at least one cell
+    test_atleastone = np.sum(afm.X.A>0, axis=0)>0
+    afm = afm[:,test_atleastone].copy()
 
     return afm
 
@@ -116,22 +116,31 @@ def make_AFM(path_afm, path_meta=None, cell_file=None, sample='MDA_clones', only
 
 def compute_metrics_raw(afm):
     """
-    Compute raw dataset metrics.
+    Compute raw dataset metrics and update .uns.
     """
+    
+    # Compute general cell-site coverage metrics
     d = {}
-    test_sites = mask_mt_sites(afm)
- 
-    # n consensus UMIs per target site per cell
-    d['median_site_cov'] = afm.uns['per_position_coverage'].loc[:,test_sites].median(axis=0).median()
-    # Compute spec/aspec median site coverage per cell
-    aspec = np.median(afm.uns['per_position_coverage'].loc[:,~test_sites].values)
-    spec = np.median(afm.uns['per_position_coverage'].loc[:,test_sites].values)
-    d['log10_specific_vs_aspecific_signal'] = np.log10(spec/(aspec+0.000001))
+    if afm.uns["scLT_system"] == "MAESTER":
 
-    # To df
-    df = pd.Series(d).T.to_frame('value').reset_index().rename(columns={'index':'metric'})
+        if afm.uns['pp_method'] in ['mito_preprocessing', 'maegatk']:
+            d['median_site_cov'] = afm.obs['median_target_site_coverage'].median()
+            d['median_target/untarget_coverage_logratio'] = np.median(
+                np.log10(
+                    afm.obs['median_target_site_coverage'] / \
+                    (afm.obs['median_untarget_site_coverage']+0.000001)
+                )
+            ).round(2)
+        else:
+            logging.info(f'Skip general metrics for pp_method {afm.uns["pp_method"]}.')
 
-    return df
+    elif afm.uns["scLT_system"] == "redeem":
+        d['median_site_cov'] = afm.obs['mean_site_coverage'].median()
+    
+    else:
+        logging.info(f'Skip raw metrics (scLT_system: {afm.uns["scLT_system"]}).')
+
+    afm.uns['dataset_metrics'] = d
 
 
 ##
@@ -169,15 +178,17 @@ def compute_connectivity_metrics(X):
 ##
 
 
-def compute_metrics_filtered(a, spatial_metrics=True, weights=None, bin_method='MI_TO', 
-                            binarization_kwargs={}, tree_kwargs={}):
+def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
+                            bin_method='MiTo', binarization_kwargs={}, tree_kwargs={}):
     """
     Compute additional metrics on selected MT-SNVs feature space.
     """
 
-    # Binarize
-    X_bin = call_genotypes(a=a, bin_method=bin_method, **binarization_kwargs)
+    # Last time, to ensure consistency
+    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+    
     d = {}
+    X_bin = afm.layers['bin'].A.copy()
 
     # n cells and vars
     d['n_cells'] = X_bin.shape[0]
@@ -191,17 +202,20 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, bin_method='
     d['std_n_cells_per_var'] = np.std((X_bin>0).sum(axis=0))
     # AFM sparseness and genotypes uniqueness
     d['density'] = (X_bin>0).sum() / np.product(X_bin.shape)
-    seqs = AFM_to_seqs(a, bin_method=bin_method, binarization_kwargs=binarization_kwargs)
+    seqs = AFM_to_seqs(afm)
     unique_genomes_occurrences = pd.Series(seqs).value_counts(normalize=True)
     d['genomes_redundancy'] = 1-(unique_genomes_occurrences.size / X_bin.shape[0])
     d['median_genome_prevalence'] = unique_genomes_occurrences.median()
     # Mutational spectra
-    class_annot = a.var_names.map(lambda x: x.split('_')[1]).value_counts().astype('int')
+    class_annot = afm.var_names.map(lambda x: x.split('_')[1]).value_counts().astype('int')
     class_annot.index = class_annot.index.map(lambda x: f'mut_class_{x}')
     n_transitions = class_annot.loc[class_annot.index.str.contains('|'.join(transitions))].sum()
     n_transversions = class_annot.loc[class_annot.index.str.contains('|'.join(transversions))].sum()
     # % lineage-biased mutations
-    freq_lineage_biased_muts = (a.var.loc[:,a.var.columns.str.startswith('FDR')]<=.1).any(axis=1).sum() / a.shape[1]
+    if afm.var.columns.str.startswith('FDR').any():
+        freq_lineage_biased_muts = (afm.var.loc[:,afm.var.columns.str.startswith('FDR')]<=.1).any(axis=1).sum() / afm.shape[1]
+    else:
+        freq_lineage_biased_muts = np.nan
 
     # Collect
     d = pd.concat([
@@ -212,6 +226,7 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, bin_method='
     ])
 
     # Spatial metrics
+    tree = None
     if spatial_metrics:
         
         # Cell connectedness
@@ -222,40 +237,35 @@ def compute_metrics_filtered(a, spatial_metrics=True, weights=None, bin_method='
         d['proportion_largest_component'] = proportion_largest_component
 
         # Baseline tree internal nodes mutations support
-        tree = build_tree(a=a, weights=weights, bin_method=bin_method, binarization_kwargs=binarization_kwargs, **tree_kwargs)
-        tree_collapsed = tree.copy()
-        tree_collapsed.collapse_mutationless_edges(True)
-        d['frac_supported_nodes'] = len(tree_collapsed.internal_nodes) / len(tree.internal_nodes)
+        tree = build_tree(afm, bin_method=bin_method, binarization_kwargs=binarization_kwargs, ncores=ncores, **tree_kwargs)
 
-    # to df
-    df = pd.Series(d).T.to_frame('value').reset_index().rename(columns={'index':'metric'})
+    # To .uns
+    afm.uns['dataset_metrics'].update(d)
 
-    return df, coo_matrix(X_bin.T)
+    return tree
 
 
 ##
 
 
-def filter_AFM(
-    afm, 
-    lineage_column=None, min_cell_number=0, cells=None,
-    filtering='MI_TO', filtering_kwargs={}, max_AD_counts=1, variants=None,
-    spatial_metrics=False, tree_kwargs={}, nproc=8,
-    fit_mixtures=False, only_positive_deltaBIC=False,  
-    path_priors=None, max_prior=1, path_dbSNP=None, path_REDIdb=None, 
-    compute_enrichment=False, bin_method='vanilla', binarization_kwargs={}, 
-    return_X_bin=False
+def filter_afm(
+    afm, lineage_column=None, min_cell_number=0, cells=None,
+    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None,
+    fit_mixtures=False, only_positive_deltaBIC=False, path_dbSNP=None, path_REDIdb=None, 
+    compute_enrichment=False, bin_method='MiTo', binarization_kwargs={}, ncores=8,
+    spatial_metrics=False, tree_kwargs={}, return_tree=False
     ):
     """
-    Filter an Allele Frequency Matrix (AFM) for downstream analysis.
-    This function implements different strategies to subset the detected cells and MT-SNVs (mitochondrial single nucleotide variants) to those that exhibit
+    
+    Filter an Allele Frequency Matrix for downstream analysis.
+    This function implements different strategies to subset the detected cells and MT-SNVs to those that exhibit
     optimal properties for single-cell lineage tracing (scLT). The user can tune filtering method defaults via the `filtering_kwargs` argument. 
     Pre-computed sets of cells and variants can be selected without relying on any specific method (the function ensures integrity of the AFM `AnnData` object after subsetting).
 
     Parameters
     ----------
     afm : AnnData
-        The AFM to subset. The AFM should be an `AnnData` object with slots as in the `read_one_sample` output.
+        The AFM to subset. AnnData object with slots as for mito_utils.make_afm.make_afm() preprocessing.
     lineage_column : str, optional
         Categorical label used with `min_cell_number` and `compute_enrichment` arguments. Cells from lineages with fewer than `min_cell_number` cells are discarded. Default is `None`.
     min_cell_number : int, optional
@@ -263,7 +273,7 @@ def filter_AFM(
     cells : list, optional
         Pre-computed list of cells to subset. Default is `None`.
     filtering : str, optional
-        Filtering method to use. Default is `'MI_TO'`.
+        Filtering method to use. Default is `'MiTo'`.
 
         The following filtering strategies are implemented (tunable filtering kwargs that can be passed with the `filtering_kwargs` argument are highlighted as `{"kwarg": default_value}`):
 
@@ -276,19 +286,13 @@ def filter_AFM(
 
         2. **'CV'**: Filters the top `n_top` MT-SNVs by Coefficient of Variation (CV). (`n_top`: `100`)
 
-        3. **'seurat'**: Adapts the highly variable genes (HVG) selection procedure in `scanpy.pp.highly_variable_genes` with the 'seurat' flavor. (`n_top`: `1000`)
-
-        4. **'ludwig2019'**: Filter adapted from Ludwig et al., 2019, experiment without ATAC-seq reference, Fig. 7. Filters MT-SNVs with:
-            - Mean allele frequency (AF) ≥ 0.5 (`mean_af`: `0.5`)
-            - Mean MT-SNV consensus UMI base sequencing quality ≥ 20 (`min_var_quality`: `20`)
-
-        5. **'miller2022'**: Filter adapted from Miller et al., 2022. Filters MT-SNVs with:
+        3. **'miller2022'**: Filter adapted from Miller et al., 2022. Filters MT-SNVs with:
             - Mean site coverage ≥ 100 (`min_site_cov`: `100`)
             - Mean MT-SNV consensus UMI base sequencing quality ≥ 30 (`min_var_quality`: `30`)
             - 1st percentile AF value ≤ 0.01 (`perc_1`: `0.01`)
             - 99th percentile AF value ≥ 0.1 (`perc_99`: `0.1`)
 
-        6. **'weng2024'**: Filter adapted from Weng et al., 2024 MAESTER data analysis. Filters MT-SNVs with:
+        4. **'weng2024'**: Filter adapted from Weng et al., 2024 MAESTER data analysis. Filters MT-SNVs with:
             - Mean site coverage ≥ 5 (`min_site_cov`: `5`)
             - Mean MT-SNV consensus UMI base sequencing quality ≥ 30 (`min_var_quality`: `30`)
             - Fraction of negative cells (i.e., 0 ALT UMIs) ≥ 0.9 (`min_frac_negative`: `0.9`)
@@ -296,25 +300,21 @@ def filter_AFM(
             - Enough prevalence of minimal detection (`low_confidence_af`: `0.1`, `min_prevalence_low_confidence_af`: `0.1`)
             - Enough evidence of high-AF detection events (`high_confidence_af`: `0.5`, `min_cells_high_confidence_af`: `2`)
 
-        7. **'MQuad'**: Filter from Kwock et al., 2022.
+        5. **'MQuad'**: Filter from Kwock et al., 2022.
 
-        8. **'MQuad_optimized'**: Filter from Kwock et al., 2022, with some twists to handle high- and low-prevalence MT-SNVs separately (`split_t`: `0.2`)
-
-        9. **'density'**: Removes rows and columns recursively until a desired density is matched (`density`: `0.1`, `t`: `0.01`)
-
-        10. **'MI_TO'**: Default filter, integrating aspects of 'miller2022' and 'weng2024'. Filters MT-SNVs with:
-            - Mean site coverage ≥ 10 (`min_site_cov`: `10`)
+        6. **'MiTo'**: Default filter, integrating aspects of 'miller2022' and 'weng2024'. Filters MT-SNVs with:
             - Mean MT-SNV consensus UMI base sequencing quality ≥ 30 (`min_var_quality`: `30`)
             - Fraction of negative cells >= 0.2 (`min_frac_negative`: `0.2`)
-            - Number of positive cells ≥ 3 (`min_n_positive`: `3`)
-            - Enough evidence of high-AF detection events (`af_confident_detection`: `0.05`, `min_n_confidently_detected`: `2`)
-            - Minimum median AF in positive cells > 0.01 (`min_median_af`: `0.01`)
+            - Number of positive cells ≥ 2 (`min_n_positive`: `2`)
+            - Enough evidence of high-AF detection events (`af_confident_detection`: `0.01`, `min_n_confidently_detected`: `2`)
+            - Enough variant allele-supporting molecules across +cells (`min_mean_AD_in_positives` : `1.5`)
+            - Enough coverage across +cells (`min_mean_DP_in_positives` : `25`)
 
-        11. **'GT_enriched'**: Filter with availabe lineage cell annotations (i.e., Ground Truth lentiviral clones.). The AF matrix is binarized, and each variant-lineage enrichment is tested. If a variant is significantly enriched in less than `n_enriched_groups` lineages (assumed independent), is retained.
+        7. **'GT_enriched'**: Filter with availabe lineage cell annotations (i.e., Ground Truth lentiviral clones.). The AF matrix is binarized, and each variant-lineage enrichment is tested. If a variant is significantly enriched in less than `n_enriched_groups` lineages (assumed independent), is retained.
             - afm.obs column for lineage annotation ('lineage_column': None)
             - FDR threshold for Fisher's Exact test ('fdr_treshold' : .1) 
             - Max number of lineages the MT-SNV can be enriched for ('n_enriched_groups' : 2) 
-            - Binarization strategy ('bin_method' : 'MI_TO')
+            - Binarization strategy ('bin_method' : 'MiTo')
             - **kwargs for bianrization ('binarization_kwargs' : {})
 
     filtering_kwargs : dict, optional
@@ -329,16 +329,12 @@ def filter_AFM(
         If `True`, compute a list of "spatial" metrics for retained MT-SNVs, including [details missing]. Default is `False`.
     tree_kwargs : dict, optional
         Tree building keyword arguments that can be passed to `mito_utils.phylo.build_tree` when `spatial_metrics=True`. Default is `{}`.
-    nproc : int, optional
-        Number of cores to use by `mito_utils.phylo.build_tree` and `sklearn.metrics.pairwise_distances` when `spatial_metrics=True`. Default is `8`.
     fit_mixtures : bool, optional
         If `True`, fit MQuad (Kwock et al., 2022) binomial mixtures and calculate each variant's (passing baseline filters) delta BIC. Default is `False`.
     only_positive_deltaBIC : bool, optional
-        Site/variant filter. Irrespective of the filtering strategy, retain only variants with positive delta BIC (estimated with MQuad). Default is `False`.
-    path_priors : str, optional
-        Path to a `.csv` file `pos,sample1,sample2,...,sampleN`, storing the mean (across sample cells) AF of each possible MT-SNV (3 x 16,569, rCRS MT-genome sequence). This table is used to compute AF priors (i.e., average AF of an MT-SNV across samples) for each MT-SNV. Default is `None`.
-    max_prior : float, optional
-        Site/variant filter. Threshold on the maximum AF prior value (calculated from `path_priors`) allowed for a bona fide somatic MT-SNV. Default is `1` (i.e., no filter).
+        Site/variant filter. Irrespective of the filtering strategy, retain only variants with positive delta BIC (estimated with MQuad). Default is `False`.  
+    ncores: int, optional
+        n cores to use for distance computations and fit_MQuad mixtures, if necessary. Default: 8
     path_dbSNP : str, optional
         Path to a `.txt` tab-separated file with MT-SNVs "COMMON" variants from the dbSNP database. Required fields: `'pos'`, `'ALT'`, `'REF'`. All of these variants will be discarded from the final dataset. Can be found at `<path_main from zenodo folder>/data/MI_TO_bench/miscellanea`. Default is `None`.
     path_REDIdb : str, optional
@@ -346,192 +342,163 @@ def filter_AFM(
     compute_enrichment : bool, optional
         If `True`, compute MT-SNV enrichment in individual lineages from `lineage_column`. Default is `False`.
     bin_method : str, oprional 
-        Binarization strategy used for i) compute the final dataset statistics (i.e., mutation number, connectivity ecc) and ii) lineage enrichment. Default is `MI_TO`
+        Binarization strategy used for i) compute the final dataset statistics (i.e., mutation number, connectivity ecc) and ii) lineage enrichment. Default is `MiTo`
     binarization_kwargs : dict, optional
         Binarization strategy **kwargs (see mito_utils.distances.call_genotypes). Default is `{}`
-    return_X_bin : bool, optional
-        Return the binarized and filtered AF matrix. Default is False
+    return_tree : boll, optional
+        Wheter to return the tree usen in spatial metrics.
 
     Returns
     -------
     afm_filtered : AnnData
         Filtered Allelic Frequency Matrix.
-    dataset_stats : pandas.DataFrame
-        Reporting stats of the filtered dataset.
     """
 
-    # General dataset QC
-    print('Compute general dataset metrics...')
-    dataset_df = compute_metrics_raw(afm)
+    logging.info('Compute general dataset metrics...')
+    compute_metrics_raw(afm)
 
-    # Variants metrics
-    print('Compute vars_df as in Weng et al., 2024')
-    vars_df = make_vars_df(afm)
+    logging.info('Compute vars_df as in Weng et al., 2024')
+    annotate_vars(afm)
 
-    print(f'Filter MT-SNVS from the full AFM...')
+    logging.info(f'Filter MT-SNVs...')
+    scLT_system = afm.uns['scLT_system']
+    pp_method = afm.uns['pp_method'] if 'pp_method' in afm.uns else 'previously pre-processed (public data)'
+    logging.info(f'scLT_system: {scLT_system}')
+    logging.info(f'pp_method: {pp_method}')
+    logging.info(f'Feature selection method: {filtering}')
+    logging.info(f'Original afm: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
+    
+    # Cells from <lineage_column> with at least min_cell_number cells, if necessary
+    if min_cell_number>0 and lineage_column is not None:
+        afm = filter_cell_clones(afm, column=lineage_column, min_cell_number=min_cell_number)
+       
+    # Baseline filter
+    afm = filter_baseline(afm)
+    logging.info(f'afm after baseline filter: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
+    
     if filtering in filtering_options:
 
-        # n cells
-        print(f'Feature selection method: {filtering}')
-        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
-        a_cells = afm.copy()
-        
-        # Cells from clone with at least min_cell_number cells, if necessary
-        if min_cell_number > 0 and lineage_column is not None:
-            a_cells = filter_cell_clones(afm, cat_label=lineage_column, min_cell_number=min_cell_number)
-       
-        # Filter MT-SNVs, baseline
-        a_cells = filter_baseline(a_cells)
-        var_sites = a_cells.var_names.map(lambda x: x.split('_')[0])
-        test = var_sites.value_counts()[var_sites]==1
-        a_cells = a_cells[:,a_cells.var_names[test]].copy()
-        a_cells = filter_sites(a_cells)
-        print(f'AFM after baseline filters n cells: {a_cells.shape[0]} and {a_cells.shape[1]} MT-SNVs.')
-
         if filtering == 'baseline':
-            a = a_cells.copy()
+            pass
         if filtering == 'CV':
-            a = filter_CV(a_cells, **filtering_kwargs)
-        elif filtering == 'seurat':
-            a = filter_seurat(a_cells, **filtering_kwargs)
-        elif filtering == 'ludwig2019':
-            a = filter_ludwig2019(a_cells, **filtering_kwargs)
+            afm = filter_CV(afm, **filtering_kwargs)
         elif filtering == 'miller2022':
-            a = filter_miller2022(a_cells, **filtering_kwargs)
+            afm = filter_miller2022(afm, **filtering_kwargs)
         elif filtering == 'weng2024':
-            a = filter_weng2024(a_cells, **filtering_kwargs)
+            afm = filter_weng2024(afm, **filtering_kwargs)
         elif filtering == 'MQuad':
-            a = filter_Mquad(a_cells, nproc=nproc, path_=os.getcwd(), **filtering_kwargs)
-        elif filtering == 'MQuad_optimized':
-            a = filter_Mquad_optimized(a_cells, nproc=nproc, **filtering_kwargs)
-        # elif filtering == 'DADApy':
-        #     a = filter_DADApy(a_cells)
-        elif filtering == 'density':
-            a = filter_density(a_cells, **filtering_kwargs)
-        elif filtering == 'MI_TO':
-            a = filter_MI_TO(a_cells, **filtering_kwargs)
-        elif filtering == 'GT_stringent':
-            a = filter_GT_stringent(a_cells, lineage_column=lineage_column, **filtering_kwargs)
+            afm = filter_MQuad(afm, ncores=ncores, path_=os.getcwd(), **filtering_kwargs)
+        elif filtering == 'MiTo':
+            afm = filter_MiTo(afm, **filtering_kwargs)
         elif filtering == 'GT_enriched':
-            a = filter_GT_enriched(a_cells, lineage_column=lineage_column, **filtering_kwargs)
+            afm = filter_GT_enriched(afm, lineage_column=lineage_column, **filtering_kwargs)
 
-    elif cells is None and variants is not None:
-
-        # n cells
-        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
-        a_cells = afm.copy()
-        # Cells from clone with at least min_cell_number cells, if necessary
-        if min_cell_number > 0:
-            a_cells = filter_cell_clones(afm, min_cell_number=min_cell_number)
-        a = a_cells[:, variants].copy()
-        a = filter_sites(a)
-
-    elif cells is not None and variants is None:
-        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
-        a_cells = afm[cells, :].copy()
-        a_cells = filter_sites(a_cells)
-        a = a_cells.copy()
-
-    elif cells is not None and variants is not None:
-        print(f'Original AFM n cells: {afm.shape[0]} and {afm.shape[1]} MT-SNVs.')
-        a_cells = afm[cells, variants].copy()
-        a_cells = filter_sites(a_cells)
-        a = a_cells.copy()
+    elif filtering is None:
+        
+        logging.info(f'Filtering custom sets of cells and variants')
+        rows = cells if cells is not None else afm.obs_names 
+        cols = variants if variants is not None else afm.var_names 
+        afm = afm[
+            [x for x in rows if x in afm.obs_names],
+            [x for x in cols if x in afm.var_names]
+        ].copy()
     
     else:
         raise ValueError(
                 f'''The provided filtering method {filtering} is not supported.
                     Choose another one...'''
             )
-    
+
     # Filter common SNVs and possible RNA-edits
+    n_dbSNP = np.nan
     if path_dbSNP is not None:
         if os.path.exists(path_dbSNP):
             common = pd.read_csv(path_dbSNP, index_col=0, sep='\t')
             common = common['pos'].astype('str') + '_' + common['REF'] + '>' + common['ALT'].map(lambda x: x.split('|')[0])
             common = common.to_list()
-            variants = a.var_names[~a.var_names.isin(common)]
-            a = a[:,variants].copy()
-            a = filter_sites(a)
+            n_dbSNP = afm.var_names.isin(common).sum()
+            logging.info(f'Exclude {n_dbSNP} common SNVs events (dbSNP)')
+            variants = afm.var_names[~afm.var_names.isin(common)]
+            afm = afm[:,variants].copy() 
+
+    # Filter possible RNA-edits  
+    n_REDIdb = np.nan     
     if path_REDIdb is not None:
         if os.path.exists(path_REDIdb):
             edits = pd.read_csv(path_REDIdb, index_col=0, sep='\t')
             edits = edits.query('nSamples>100')
             edits = edits['Position'].astype('str') + '_' + edits['Ref'] + '>' + edits['Ed']
             edits = edits.to_list()
-            variants = a.var_names[~a.var_names.isin(edits)]
-            a = a[:,variants].copy()
-            a = filter_sites(a)
+            n_REDIdb = afm.var_names.isin(edits).sum()
+            logging.info(f'Exclude {n_REDIdb} common RNA editing events (REDIdb)')
+            variants = afm.var_names[~afm.var_names.isin(edits)]
+            afm = afm[:,variants].copy()
 
-    # Filter cells with at leaast one muts above af_confident_detection
-    a = filter_cells_with_at_least_one(a, bin_method=bin_method, binarization_kwargs=binarization_kwargs)
 
+    # Filter cells with at least one muts above af_confident_detection
+    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>0,:]
+ 
     # Final dataset and filtered MT-SNVs metrics to evalutate the selected MT-SNVs space quality
-    print(f'Filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
-    if a.shape[1] == 0:
+    logging.info(f'Filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
+    if afm.shape[1] == 0:
         raise ValueError('No variant selected! Change filtering method!!')
-
-    # Compute last metrics for filtered variants
-    vars_df['filtered'] = vars_df.index.isin(a.var_names)
-    filtered_vars_df = vars_df.loc[a.var_names]
-
-    # Add priors from external data sources
-    if path_priors is not None:
-        if os.path.exists(path_priors) and 'sample' in a.obs:
-            sample_name = a.obs['sample'].unique()[0]
-            priors = pd.read_csv(path_priors, index_col=0)
-            vars_df['prior'] = priors.loc[:,priors.columns!=sample_name].mean(axis=1)
-            filtered_vars_df['prior'] = vars_df['prior'].loc[filtered_vars_df.index]
-
-    # Bimodal mixture modelling deltaBIC (MQuad-like)
+ 
+    # Bimodal mixture modelling: deltaBIC (MQuad-like)
     if fit_mixtures:
-        filtered_vars_df = filtered_vars_df.join(fit_MQuad_mixtures(a).dropna()[['deltaBIC']])
-
-    # Add all filtered variants metadata to afm
-    assert all(a.var_names == filtered_vars_df.index)
-    a.var = filtered_vars_df
-
+        afm.var = afm.var.join(fit_MQuad_mixtures(afm, ncores=ncores).dropna()[['deltaBIC']])
+ 
     # Last (optional filters):
     if fit_mixtures and only_positive_deltaBIC:
-        a = a[:,a.var['deltaBIC']>0].copy()
-        a = filter_sites(a)
-    if 'prior' in a.var.columns and max_prior<1:
-        a = a[:,a.var['prior']<max_prior].copy()
-        a = filter_sites(a)
+        afm = afm[:,afm.var['deltaBIC']>0].copy()
     if max_AD_counts>1:
-        AD, _, _ = get_AD_DP(a)
-        test_max_ad_alleles = np.max(AD.A.T, axis=0)>=max_AD_counts
-        a = a[:,test_max_ad_alleles].copy()
-        a = filter_sites(a)
-
+        afm = afm[:,np.max(afm.layers['AD'].A, axis=0)>=max_AD_counts].copy()
+ 
     # Final fixes
-    a = filter_cells_with_at_least_one(a, bin_method=bin_method, binarization_kwargs=binarization_kwargs)
-    a = filter_sites(a)
-    print(f'Last filters: filtered AFM contains {a.shape[0]} cells and {a.shape[1]} MT-SNVs.')
+    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>0,:]
+    logging.info(f'Last optional filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
     
     # Lineage bias
-    if lineage_column in a.obs.columns and compute_enrichment:
-        lineages = a.obs[lineage_column].dropna().unique()
+    if lineage_column in afm.obs.columns and compute_enrichment:
+        
+        logging.info(f'Compute MT-SNVs enrichment for {lineage_column} categories')
+        lineages = afm.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
-            res = compute_lineage_biases(a, lineage_column, target_lineage, 
+            res = compute_lineage_biases(afm, lineage_column, target_lineage, 
                                         bin_method=bin_method, binarization_kwargs=binarization_kwargs)
-            a.var[f'FDR_{target_lineage}'] = res['FDR']
-            a.var[f'odds_ratio_{target_lineage}'] = res['odds_ratio']
+            afm.var[f'FDR_{target_lineage}'] = res['FDR']
+            afm.var[f'odds_ratio_{target_lineage}'] = res['odds_ratio']
 
     # Last dataset stats 
-    final_metrics, X_bin = compute_metrics_filtered(
-        a, spatial_metrics=spatial_metrics, 
-        weights=1-a.var['prior'].values if 'prior' in a.var.columns else None, 
+    logging.info(f'Add last metrics')
+    tree = compute_metrics_filtered(
+        afm, 
+        spatial_metrics=spatial_metrics, 
         tree_kwargs=tree_kwargs,
         bin_method=bin_method, 
-        binarization_kwargs=binarization_kwargs
+        binarization_kwargs=binarization_kwargs,
+        ncores=ncores
     )
-    dataset_df = pd.concat([dataset_df,final_metrics])
+
+    # Add params to .uns
+    afm.uns['char_filter'] = {
+        'lineage_column' : lineage_column, 
+        'min_cell_number' : min_cell_number,
+        'filtering' : filtering if (cells is not None) or (variants is not None) else 'predefined_sets',
+        'max_AD_counts' : max_AD_counts,
+        'only_positive_deltaBIC' : only_positive_deltaBIC,
+        'compute_enrichment' : compute_enrichment,
+        'spatial_metrics' : spatial_metrics,
+        'n_dbSNP' : n_dbSNP,
+        'n_REDIdb' : n_REDIdb,
+    }
+    afm.uns['char_filter'].update(filtering_kwargs)
     
-    if return_X_bin:
-        return a, dataset_df, X_bin
+    if return_tree:
+        return afm, tree
     else:
-        return a, dataset_df
+        return afm
 
 
 ##

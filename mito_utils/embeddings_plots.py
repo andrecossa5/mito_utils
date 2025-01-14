@@ -34,7 +34,7 @@ def format_draw_embeddings(
 
     if axes_params['only_labels']:
         remove_ticks(ax)
-    elif axes_params['no_axis']:
+    if not axes_params['axis']:
         ax.axis('off')
     
     if axes_params['legend'] and cat is not None:
@@ -43,7 +43,7 @@ def format_draw_embeddings(
         add_legend(ax=ax, **legend_params)
     
     elif axes_params['cbar'] and cont is not None:
-        add_cbar(df[cont], label=cont, ax=ax, **cbar_params)
+        add_cbar(df[cont], ax=ax, **cbar_params)
 
     return ax
 
@@ -72,7 +72,9 @@ def handle_colors(df, cat, legend_params, query=None):
         palette_cat = sc.pl.palettes.godsnot_102
         legend_params['colors'] = create_palette(df_, cat, palette_cat)
     elif isinstance(legend_params['colors'], dict):
-        assert all([ k in categories for k in legend_params['colors']])
+        print(categories)
+        print(legend_params['colors'].keys())
+        assert all([ cat in legend_params['colors'] for cat in categories ])
         print('Provided colors are OK...')
     else:
         raise ValueError('Provide a correctly formatted palette for your categorical labels!')
@@ -96,7 +98,8 @@ def draw_embeddings(
         'vmax':None,
         'label_size' : 8, 
         'ticks_size' : 6,  
-        'layout' : 'outside'
+        'layout' : 'outside',
+        'label' : None
     }
 
     legend_params={
@@ -110,7 +113,7 @@ def draw_embeddings(
 
     axes_params = {
         'only_labels' : True,
-        'no_axis' : False, 
+        'axis' : False, 
         'legend' : True,
         'cbar' : True,
         'title_size' : 10
@@ -172,6 +175,8 @@ def draw_embeddings(
 
     else:
         raise ValueError('Specifiy either a categorical or a continuous covariate for plotting.')
+    
+    ax.axis('off')
 
     return ax
 
