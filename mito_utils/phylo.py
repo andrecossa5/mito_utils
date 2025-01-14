@@ -7,7 +7,6 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics import silhouette_score
 from scipy.stats import pearsonr
 from cassiopeia.plotting.local import *
-from scipy.sparse import issparse
 from plotting_utils._utils import *
 from mito_utils.distances import *
 from mito_utils.preprocessing import *
@@ -41,104 +40,6 @@ _solver_kwargs = {
 
 ##
 
-
-def bootstrap_allele_counts(ad, dp, frac=.8):
-    """
-    Bootstrapping of ad and dp count tables. ad --> alternative counts
-    dp --> coverage at that site. NB: AD and DP are assumed in shape cells x variants. 
-    Both sparse matrices and dense arrays can be passed.
-    """
-
-    ad = ad if not issparse(ad) else ad.A
-    dp = dp if not issparse(dp) else dp.A
-    new_ad = np.zeros(ad.shape)
-    new_dp = np.zeros(ad.shape)
-
-    for j in range(ad.shape[1]): # Iterate on variants
-
-        alt_counts = ad[:,j]
-        ref_counts = dp[:,j] - ad[:,j]
-
-        for i in range(ad.shape[0]): # Iterate on cells
-
-            observed_alleles = np.concatenate([
-                np.ones(alt_counts[i]), 
-                np.zeros(ref_counts[i])
-            ])
-            n = round(observed_alleles.size*frac)
-            new_alt_counts = np.random.choice(observed_alleles, n, replace=True).sum() 
-            new_dp[i,j] = n
-            new_ad[i,j] = new_alt_counts
-
-    return new_ad, new_dp, np.arange(ad.shape[1])
-
-
-##
-
-
-def bootstrap_allele_tables(ad=None, dp=None, M=None, frac_resampled=.9):
-    """
-    Bootstrapping of ad and dp count tables. ad --> alternative counts
-    dp --> coverage at that site. NB: AD and DP are assumed in shape cells x variants. 
-    Both sparse matrices and dense arrays can be passed.
-    """
-
-    if ad is not None and dp is not None:
-
-        n = ad.shape[1]
-        if frac_resampled == 1:
-            resampled_idx = np.random.choice(np.arange(n), n, replace=True) 
-        else:    
-            resampled_idx = np.random.choice(np.arange(n), round(n*frac_resampled), replace=False)   
-        ad = ad if not issparse(ad) else ad.A
-        dp = dp if not issparse(dp) else dp.A
-        new_ad = ad[:,resampled_idx]
-        new_dp = dp[:,resampled_idx]
-
-        return new_ad, new_dp, resampled_idx
-    
-    elif M is not None:
-
-        n = M.shape[1]
-        resampled_idx = np.random.choice(np.arange(n), n, replace=True)   
-
-        return M.iloc[:,resampled_idx].copy()
-
-
-##
-
-
-def jackknife_allele_tables(ad=None, dp=None, M=None):
-    """
-    LOO of ad and dp count tables. ad --> alternative counts
-    dp --> coverage at that site. NB: AD and DP are assumed in shape cells x variants. 
-    Both sparse matrices and dense arrays can be passed.
-    """
-
-    if ad is not None and dp is not None:
-
-        n = ad.shape[1]
-        to_exclude = np.random.choice(np.arange(n), 1)[0]
-        resampled_idx = [ x for x in np.arange(n) if x != to_exclude ]
-        ad = ad if not issparse(ad) else ad.A
-        dp = dp if not issparse(dp) else dp.A
-        new_ad = ad[:,resampled_idx]
-        new_dp = dp[:,resampled_idx]
-
-        return new_ad, new_dp, resampled_idx
-    
-    elif M is not None:
-
-        n = M.shape[1]
-        to_exclude = np.random.choice(np.arange(n), 1)[0]
-        resampled_idx = [ x for x in np.arange(n) if x != to_exclude ]
-
-        return M.iloc[:,resampled_idx].copy()
-
-
-##
-
-
 def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, max_frac_positive, filter_muts=True):
     """
     Extract afm slots for CassiopeiaTree instantiation.
@@ -151,12 +52,15 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
     D = afm.obsp[distance_key].A.copy()
     D[np.isnan(D)] = 0
     D = pd.DataFrame(D, index=afm.obs_names, columns=afm.obs_names)
-    M_raw = pd.DataFrame(afm.X.A, index=afm.obs_names, columns=afm.var_names)
     M = pd.DataFrame(afm.layers[layer].A, index=afm.obs_names, columns=afm.var_names)
+    if afm.X is not None:
+        M_raw = pd.DataFrame(afm.X.A, index=afm.obs_names, columns=afm.var_names)
+    else:
+        M_raw = M.copy()
 
     # Remove variants from char matrix i) they are called in less than min_n_positive_cells or ii) > max_frac_positive 
     # We avoid recomputing distances as their contribution to the average pairwise cell-cell distance is minimal
-    if filter_muts and afm.uns['scLT_system'] == 'SNVs':
+    if filter_muts and afm.uns['scLT_system'] != 'Cas9':
         test_germline = ((M==1).sum(axis=0) / M.shape[0]) <= max_frac_positive
         test_too_rare = (M==1).sum(axis=0) >= min_n_positive_cells
         test = (test_germline) & (test_too_rare)
@@ -171,7 +75,7 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
 def build_tree(
     afm, precomputed=False, distance_key='distances', metric='jaccard', 
-    bin_method='MiTo', solver='NJ', ncores=1, min_n_positive_cells=2, filter_muts=True,
+    bin_method='MiTo', solver='UPMGA', ncores=1, min_n_positive_cells=2, filter_muts=True,
     max_frac_positive=.95, binarization_kwargs={}, solver_kwargs={},
     ):
     """
@@ -576,283 +480,16 @@ def get_internal_node_stats(tree):
     df = pd.DataFrame({
         'support' : get_supports(tree), 
         'time' : [ tree.get_time(node) for node in tree.internal_nodes ],
-        'mut' : [ tree.get_attribute(node, 'mut') for node in tree.internal_nodes ],
         'clade_size' : [ len(clades[node]) for node in tree.internal_nodes ]
         }, 
         index=tree.internal_nodes
     )
+    try:
+        df['mut'] = [ tree.get_attribute(node, 'mut') for node in tree.internal_nodes ]
+    except:
+        pass
     
     return df 
-
-
-##
-
-
-###################################### Deprecated code
-
-
-# def bootstrap_iteration(
-#     X=None, a=None, AD=None, DP=None, meta=None,
-#     metric='jaccard', binary=True, bin_method='vanilla', scale=True,
-#     solver='UPMGA', ncores=8, boot_strategy='jacknife',
-#     metric_kwargs={}, binarization_kwargs={}, solver_kwargs={}
-#     ):
-#     """
-#     One bootstrap iteration.
-#     """
-# 
-#     # Tree kwargs
-#     tree_kwargs = dict(
-#         meta=meta, metric=metric, binary=binary, bin_method=bin_method, scale=scale,
-#         solver=solver, ncores=ncores, metric_kwargs=metric_kwargs, 
-#         binarization_kwargs=binarization_kwargs, solver_kwargs=solver_kwargs
-#     )
-# 
-#     # Bootstrap ch matrix
-#     if AD is not None and DP is not None:
-#         
-#         AD_ = None
-#         DP_ = None
-#         if boot_strategy == 'jacknife':
-#             AD_, DP_, _ = jackknife_allele_tables(ad=AD, dp=DP)
-#         elif boot_strategy == 'features_resampling':
-#             AD_, DP_, _ = bootstrap_allele_tables(ad=AD, dp=DP)
-#         elif boot_strategy == 'counts_resampling':
-#             AD_, DP_, _ = bootstrap_allele_counts(AD, DP)
-#         else:
-#             raise ValueError(f'{boot_strategy} is not supported. Choose one between: jacknife, features_resampling or counts_resampling')
-# 
-#         tree = build_tree(AD=AD_, DP=DP_, **tree_kwargs)
-#     
-#     elif X is not None:
-#      
-#         if boot_strategy == 'jacknife':
-#             X = jackknife_allele_tables(M=X)
-#         elif boot_strategy == 'features_resampling':
-#             X = bootstrap_allele_tables(M=X)
-#         elif boot_strategy == 'counts_resampling':
-#             raise ValueError('Pass AD and DP for counts resampling...')
-#         else:
-#             raise ValueError(f'{boot_strategy} is not supported. Choose one between: jacknife, features_resampling or counts_resampling')
-# 
-#         tree = build_tree(X=X, **tree_kwargs)
-# 
-#     return tree
-# 
-# 
-# def compute_n_cells_clades(tree):
-#     """
-#     Find all clades in a tree, from top to bottom
-#     """
-#     clades = get_clades(tree)
-#     cell_counts_df = (
-#         pd.Series({k : len(clades[k]) for k in clades})
-#         .sort_values(ascending=False)
-#     )
-# 
-#     return cell_counts_df
-# 
-# 
-# ##
-# 
-# 
-# def calculate_FBP(obs_tree, tree_list):
-#     """
-#     Calculate Falsestein Bootstrap proportions.
-#     """
-#     obs_clades = get_clades(obs_tree, with_root=False)
-#     supports = { k : 0 for k in obs_clades }
-# 
-#     for boot_tree in tree_list:
-#         b_ = get_clades(boot_tree, with_root=False).values()
-#         for k in obs_clades:
-#             if obs_clades[k] in b_:
-#                 supports[k] += 1
-# 
-#     supports = pd.Series(supports)/len(tree_list)
-#     supports = (supports * 100).astype(int)
-# 
-#     return supports.to_dict()
-# 
-# 
-# ##
-# 
-# 
-# def get_binary_clade(clade, leaves_order):
-#     """
-#     Get binary encoding of the clade bipartition.
-#     """
-#     bin_bool = np.array([ x in clade for x in leaves_order ])
-#     sum_1 = np.sum(bin_bool)
-#     sum_0 = bin_bool.size-sum_1
-# 
-#     if sum_1>=sum_0:
-#         v = bin_bool.astype(np.int0)
-#     else:
-#         v = (~bin_bool).astype(np.int0)
-# 
-#     return v
-# 
-# 
-# ##
-# 
-# 
-# def compute_TBE_hamming_one_tree(obs_clades, leaves_order, boot_tree, n_jobs=8):
-#     """
-#     Compute Transfer Support for all the observed clades, given one boot replicate.
-#     """
-# 
-#     boot_clades = get_clades(boot_tree, with_root=False, with_singletons=True)
-# 
-#     OBS = np.array([ 
-#         get_binary_clade(obs_clades[clade], leaves_order=leaves_order) \
-#         for clade in obs_clades 
-#     ]).astype(np.float16)
-#     p = np.sum(OBS==0, axis=1)
-# 
-#     BOOT = np.array([ 
-#         get_binary_clade(boot_clades[clade], leaves_order=leaves_order) \
-#         for clade in boot_clades 
-#     ]).astype(np.float16)
-# 
-#     D1 = pairwise_distances(OBS, BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
-#     D2 = pairwise_distances((~OBS.astype(bool)).astype(np.int0), BOOT, metric='hamming', n_jobs=n_jobs) * OBS.shape[1]
-#     D = np.minimum(D1, D2)
-#     transfer_index = D.min(axis=1)
-# 
-#     S = 1-transfer_index/(p-1)
-#     S[np.where(S<0)] = 0  # Numerical issues with hamming distance rounding ecc.
-#     S[np.where(S>1)] = 1  # Numerical issues with hamming distance rounding ecc.
-# 
-#     return S
-# 
-# 
-# ##
-# 
-# 
-# def calculate_TBE(obs_tree, tree_list, n_jobs=8):
-#     """
-#     Calculate TBE from Lamoine et al., 2018 and the definition of transfer distance
-#     from the Hamming of clades bi-partition encodings.
-#     """
-#     leaves_order = obs_tree.leaves
-#     obs_clades = get_clades(obs_tree, with_root=False)
-# 
-#     supports = []
-#     for boot_tree in tree_list:
-#         supports.append(
-#             compute_TBE_hamming_one_tree(
-#                 obs_clades, leaves_order, boot_tree, n_jobs=n_jobs
-#             )
-#         )
-#     supports = pd.Series(np.mean(supports, axis=0), index=obs_clades.keys())
-#     supports.loc[supports.isna()] = 0
-#     supports = (supports * 100).astype(int)
-# 
-#     return supports.to_dict()
-# 
-# 
-# ##
-# 
-# 
-# def calculate_supports(obs_tree, tree_list, method='TBE', n_jobs=8):
-#     """
-#     Calculates internal nodes bootstrap support. Two algorithms
-#     implemented:
-#     - fbp: Falsestein Bootstrap Proportions, traditional support from Falsestein's work.
-#     - tbe: Transfer Bootstrap Expectations, transfer distance-based method, suitable
-#            for big phylogenies.
-#     """
-# 
-#     if method == 'FBP':
-#         supports = calculate_FBP(obs_tree, tree_list)
-#     elif method == 'TBE':
-#         supports = calculate_TBE(obs_tree, tree_list, n_jobs=n_jobs)
-#     else:
-#         raise ValueError('No other method implemented so far...')
-# 
-#     tree = obs_tree.copy()
-#     for node in supports:
-#         tree.set_attribute(node, 'support', supports[node])
-# 
-#     return tree
-# 
-# 
-# def get_internal_node_muts(tree, internal_node):
-#     """
-#     Get each internal node mutational status.
-#     """
-#     muts = tree.character_matrix.columns
-#     node_state = np.array(tree.get_character_states(internal_node))
-#     idx = np.where(node_state==1)[0]
-#     muts = muts[idx].to_list()
-#     return muts
-# 
-# 
-# ##
-# 
-# 
-# def assess_internal_node_muts(a, clades, c, high_af=.05):
-#     """
-#     Assess the prevalence of all MT-SNVs assigned to a single internal node 
-#     within its clade (p1), and outside of it (p0). Return useful stats.
-#     """
-#     cells = list(clades[c])
-#     other_cells = a.obs_names[~a.obs_names.isin(cells)]
-#     p1 = np.where(a[cells,:].X>=high_af,1,0).sum(axis=0) / len(cells)
-#     p0 = np.where(a[other_cells, :].X>=high_af,1,0).sum(axis=0) / len(other_cells)
-#     af1 = np.median(a[cells,:].X, axis=0)
-#     af0 = np.median(a[other_cells, :].X, axis=0)
-#     muts = a.var_names
-#     top_mut = (
-#         pd.DataFrame(
-#             {'p1':p1,'p0':p0, 'median_af1':af1, 'median_af0':af0, 
-#              'clade':[c]*len(muts), 'ncells':[len(cells)]*len(muts)}, 
-#             index=muts
-#         )
-#         .assign(p_ratio=lambda x: x['p1']/x['p0']+.0001)
-#         .assign(af_ratio=lambda x: x['median_af1']/x['median_af0']+.0001)
-#         .query('median_af1>=@high_af and median_af0==0')
-#         .sort_values('p_ratio', ascending=False)
-#     )
-#     return top_mut
-# 
-# 
-# ##
-# 
-# 
-# def get_supporting_muts(tree, a, t=.05):
-#     """
-#     For each clade, rank its supporting mutations.
-#     """
-#     clades = get_clades(tree)
-#     stats = []
-#     for c in clades:
-#         if c != 'root':
-#             top_mut = assess_internal_node_muts(a, clades, c, high_af=t)
-#             stats.append(top_mut)
-#     final_muts = pd.concat(stats)
-#     muts = final_muts.index.unique().tolist()
-#         
-#     return muts
-# 
-# 
-# ##
-# 
-# 
-# def sort_muts(tree):
-#     """
-#     Sort all tree mutations for plotting,
-#     """
-#     muts = (
-#         tree.cell_meta
-#         .loc[tree.leaves]
-#         .apply(lambda x: tree.cell_meta.columns[x.argmax()], axis=1)
-#         .drop_duplicates()
-#         .to_list()
-#     )
-# 
-#     return muts
 
 
 ##
