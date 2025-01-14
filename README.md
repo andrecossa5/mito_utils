@@ -1,6 +1,6 @@
 # mito_utils
 
-Utilities for MI-TO analyses.
+Utilities for MiTo.
 This package is still under active development. To use functions and modules perform the following steps:
 
 1. Install mamba package manager (https://mamba.readthedocs.io/en/latest/installation/mamba-installation.html)
