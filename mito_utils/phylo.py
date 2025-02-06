@@ -423,7 +423,7 @@ def MiToTreeAnnotator(tree, n_clones=None):
     
     mut_map = { mut : cluster for mut, cluster in zip(tree.character_matrix.columns, mut_clusters)}
     node_assignment['mut_cluster'] = node_assignment['mut'].map(mut_map)
-    node_assignment['MT_clone'] = node_assignment['mut_cluster'].map(lambda x: f'C{x}')
+    node_assignment['MT_clone'] = node_assignment['mut_cluster'].map(lambda x: f'MiTo_{x}')
 
     # Annotate tree.cell meta
     df_clades = df_clades.loc[:,node_assignment.index]
@@ -436,7 +436,7 @@ def MiToTreeAnnotator(tree, n_clones=None):
     df_clades = pd.Series(resolved_nodes).to_frame('clade')
     df_clades['MT_clone'] = df_clades['clade'].map(node_assignment['MT_clone'].to_dict())
     tree.cell_meta['MT_clone'] = df_clades.loc[tree.cell_meta.index, 'MT_clone']
-    tree.cell_meta['MT_clone'] = np.where(~tree.cell_meta['MT_clone'].isna(), tree.cell_meta['MT_clone'], 'Undefined')
+    # tree.cell_meta['MT_clone'] = np.where(~tree.cell_meta['MT_clone'].isna(), tree.cell_meta['MT_clone'], 'Undefined')
     n_clones = tree.cell_meta['MT_clone'].unique().size
     
     logging.info(f'Final MT_clones: {n_clones}')
