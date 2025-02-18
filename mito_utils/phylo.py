@@ -75,7 +75,7 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
 def build_tree(
     afm, precomputed=False, distance_key='distances', metric='jaccard', 
-    bin_method='MiTo', solver='UPMGA', ncores=1, min_n_positive_cells=2, filter_muts=True,
+    bin_method='MiTo', solver='UPMGA', ncores=1, min_n_positive_cells=2, filter_muts=False,
     max_frac_positive=.95, binarization_kwargs={}, solver_kwargs={},
     ):
     """

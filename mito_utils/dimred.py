@@ -113,7 +113,7 @@ def _get_D(afm, distance_key, **kwargs):
 
 def reduce_dimensions(
     afm, layer='bin', distance_key='distances', seed=1234, method='UMAP', k=15, 
-    n_comps=2, ncores=8, metric='jaccard', bin_method='vanilla', metric_kwargs={}, binarization_kwargs={}
+    n_comps=2, ncores=8, metric='jaccard', bin_method='vanilla', binarization_kwargs={}
     ):
     """
     Reduce dimension of input Allelic Frequency Matrix.
@@ -129,39 +129,22 @@ def reduce_dimensions(
         metric (str, optional): _description_. Defaults to 'cosine'.
         bin_method (str, optional): _description_. Defaults to 'vanilla'.
         scale (bool, optional): _description_. Defaults to True.
-        metric_kwargs (dict, optional): _description_. Defaults to {}.
         binarization_kwargs (dict, optional): _description_. Defaults to {}.
     """
 
-    kwargs = dict(metric=metric, bin_method=bin_method, ncores=ncores,
-                  metric_kwargs=metric_kwargs, binarization_kwargs=binarization_kwargs)
+    kwargs = dict(metric=metric, bin_method=bin_method, ncores=ncores, binarization_kwargs=binarization_kwargs)
     
     if method == 'PCA':
-
         X = _get_X(afm, layer)
-        X_reduced = find_pca(X, n_pcs=n_comps, random_state=seed)
-        feature_names = [ f'PC{i}' for i in range(1, X_reduced.shape[1]+1)]
-
+        afm.obsm['X_pca'] = find_pca(X, n_pcs=n_comps, random_state=seed)
     elif method == 'UMAP':
-
         X = _get_X(afm, layer)
         D = _get_D(afm, distance_key, **kwargs)
         _, _, conn = kNN_graph(D=D, k=k, from_distances=True)
-        X_reduced = _umap_from_X_conn(X, conn, ncomps=n_comps, metric=metric, metric_kwargs=metric_kwargs, seed=seed)
-        feature_names = [ f'UMAP{i}' for i in range(1, X_reduced.shape[1]+1)]
-
+        afm.obsm['X_umap'] = _umap_from_X_conn(X, conn, ncomps=n_comps, metric=metric, seed=seed)
     elif method == 'diffmap':
-
         D = _get_D(afm, distance_key, **kwargs)
         P_prime, _,_,_, D_left = find_diffusion_matrix(D)
-        X_reduced = find_diffusion_map(P_prime, D_left, n_eign=n_comps)
-        feature_names = [ f'Diff{i}' for i in range(1, X_reduced.shape[1]+1)]
-
-    for name in feature_names:
-        if name in afm.obs.columns:
-            afm.obs = afm.obs.drop(columns=name).copy()
-
-    embs = pd.DataFrame(X_reduced, index=afm.obs_names, columns=feature_names)
-    afm.obs = pd.concat([afm.obs, embs], axis=1)
+        afm.obsm['X_diffmap'] = find_diffusion_map(P_prime, D_left, n_eign=n_comps)
 
 

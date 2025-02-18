@@ -184,9 +184,7 @@ def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
     Compute additional metrics on selected MT-SNVs feature space.
     """
 
-    # Last time, to ensure consistency
-    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    
+    assert 'bin' in afm.layers    
     d = {}
     X_bin = afm.layers['bin'].A.copy()
 
@@ -250,7 +248,7 @@ def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
 
 def filter_afm(
     afm, lineage_column=None, min_cell_number=0, cells=None,
-    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None,
+    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None, min_v_var=1,
     fit_mixtures=False, only_positive_deltaBIC=False, path_dbSNP=None, path_REDIdb=None, 
     compute_enrichment=False, bin_method='MiTo', binarization_kwargs={}, ncores=8,
     spatial_metrics=False, tree_kwargs={}, return_tree=False
@@ -325,6 +323,8 @@ def filter_afm(
         Cell filter. The minimum AF threshold at which at least one of the filtered MT-SNVs needs to be detected in a cell to retain the cell in the final dataset. It may be passed as a key-value pair in `filtering_kwargs`. Default is `0.01`.
     variants : list, optional
         Pre-computed list of variants to subset. Default is `None`.
+    min_n_variants : int, optional
+        N of MT-SNVs variants for a cell to be included in the downstream analysis.
     spatial_metrics : bool, optional
         If `True`, compute a list of "spatial" metrics for retained MT-SNVs, including [details missing]. Default is `False`.
     tree_kwargs : dict, optional
@@ -437,7 +437,8 @@ def filter_afm(
 
     # Filter cells with at least one muts above af_confident_detection
     call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>0,:]
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_v_var,:].copy()
+    logging.info(f'Retain cells with at least {min_v_var} MT-SNVs: {afm.shape[0]}')
  
     # Final dataset and filtered MT-SNVs metrics to evalutate the selected MT-SNVs space quality
     logging.info(f'Filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
@@ -455,9 +456,11 @@ def filter_afm(
         afm = afm[:,np.max(afm.layers['AD'].A, axis=0)>=max_AD_counts].copy()
  
     # Final fixes
-    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>0,:]
-    logging.info(f'Last optional filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
+    if bin_method == 'bin_mixtures_smooth':
+        call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_v_var,:].copy()
+    logging.info(f'Retain cells with at least {min_v_var} MT-SNVs: {afm.shape[0]}')
+    logging.info(f'Last (optional) filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
     
     # Lineage bias
     if lineage_column in afm.obs.columns and compute_enrichment:
