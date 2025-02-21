@@ -457,8 +457,7 @@ def filter_afm(
         logging.info(f'Remove MT-SNVs with no +cells having at least {max_AD_counts} AD counts')
 
     # Compute cell-cell distances and filter variants significantly auto-correlated.
-    w = np.nanmedian(np.where(afm.X.A>0, afm.X.A, np.nan), axis=0)
-    compute_distances(afm, precomputed=True, metric=metric, weights=w, ncores=ncores)
+    compute_distances(afm, precomputed=True, metric=metric, ncores=ncores)
     afm = filter_variant_moransI(afm)
     logging.info(f'Filter only MT-SNVs with significant spatial auto-correlation (i.e., Moran I statistics).')
     
