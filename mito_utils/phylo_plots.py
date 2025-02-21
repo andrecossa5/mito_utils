@@ -95,13 +95,13 @@ def _place_tree_and_annotations(
     tight_width, tight_height = compute_colorstrip_size(node_coords, anchor_coords, loc)
     width = colorstrip_width or tight_width
     spacing = colorstrip_spacing or tight_width / 2
-    is_bin_layer = all(x in [1,0,-1] for x in tree.layers[layer].iloc[:,0].unique())
     colorstrips = []
     features = features or []
     n_cat = 0
 
     for feat in features:
 
+        is_bin_layer = all(x in [1,0,-1] for x in tree.layers[layer].iloc[:,0].unique())
         if feat in tree.cell_meta.columns:
             x = tree.cell_meta[feat]
         elif feat in tree.layers[layer].columns and layer in tree.layers:
