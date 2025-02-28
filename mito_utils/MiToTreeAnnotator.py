@@ -438,7 +438,7 @@ class MiToTreeAnnotator():
         # Fire recursion!
         logging.info('Recursive tree split...')
         tree_ = self.tree.copy()
-        _find_clones(tree_, 'root', usable_mutations)
+        _find_clones(tree_, tree_.root, usable_mutations)
 
         # Get results
         df_predict = pd.concat(df_list, ignore_index=True)

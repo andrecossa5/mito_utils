@@ -20,7 +20,7 @@ from mito_utils.kNN import *
 ##
 
 
-discrete_metrics = PAIRWISE_BOOLEAN_FUNCTIONS 
+discrete_metrics = PAIRWISE_BOOLEAN_FUNCTIONS + ['weighted_jaccard']
 continuous_metrics = list(PAIRWISE_DISTANCE_FUNCTIONS.keys()) + ['correlation', 'sqeuclidean']
 
 
