@@ -2,7 +2,8 @@
 Main MiTo class for MT-SNVs single-cell phylogenies annotation.
 """
 
-import torch
+from mito_utils.utils import *
+from mito_utils.preprocessing import *
 from mito_utils.phylo import *
 
 
@@ -11,7 +12,8 @@ from mito_utils.phylo import *
 
 class MiToTreeAnnotator():
     """
-    MiTo tree annotation class.
+    MiTo tree annotation class. Performs clonal inference from an arbitrary
+    MT-SNVs-based phylogeny.
     """
 
     def __init__(self, tree):
@@ -20,21 +22,15 @@ class MiToTreeAnnotator():
         """
 
         # Slots
-        self.tree = tree
-        self.D = self.tree.get_dissimilarity_map()  # Expected to be a pd.DataFrame.
-        self.get_T()                                # Cell x clade binary matrix (pd.DataFrame).
-        self.get_ancestors()                        # Create a mapping: clade index -> list of ancestor clade indices.
-        self.get_clade_mapping()                    # Create a map from clade numerical indeces in T to actual clade names
-        self.get_M()                                # Mutation enrichment matrix (pd.DataFrame).
-        self.priors = None
-        self.initial_assignments = None
-        self.soft_selection = None
-        self.final_soft_selection = None
-        self.final_binary_selection = None
-        self.model_track = None
-        self.selected_clades = None
-        self.ordered_muts = None
+        self.tree = tree.copy()
+        self.T = None
+        self.M = None
         self.mut_df = None
+        self.ordered_muts = None
+        self.clone_df = None
+        self.clonal_nodes = None
+        self.S_aggregate = None
+        self.params = {}
 
     ##
 
@@ -43,7 +39,7 @@ class MiToTreeAnnotator():
         Compute the "cell assignment" matrix, T.
         T is a cell x clade (internal node) binary matrix mapping each cell i to every clade j.
         """
-        clades = get_clades(self.tree, with_root=with_root, with_singletons=False)
+        clades = get_clades(self.tree, with_root=with_root, with_singletons=True)
         T = np.array([[x in clades[clade] for x in self.tree.leaves] for clade in clades]).astype(int)
         T = (
             pd.DataFrame(T, index=list(clades.keys()), columns=self.tree.leaves)
@@ -77,7 +73,6 @@ class MiToTreeAnnotator():
                 n_no_mut_lineage = np.sum(~test_mut & test_lineage)
                 n_no_mut_no_lineage = np.sum(~test_mut & ~test_lineage)
                 target_ratio_array[i] = n_mut_lineage / (np.sum(test_mut) + 1e-8)
-
                 # Fisher's exact test
                 oddsratio, pvalue = fisher_exact(
                     [
@@ -97,140 +92,156 @@ class MiToTreeAnnotator():
         M = -np.log10(M)
 
         self.M = M
-    
-    ##
-
-    def get_clade_mapping(self):
-        self.idx_to_clade_mapping = { i:n for i,n in enumerate(self.T.columns) }
-        self.clade_to_idx_mapping = { n:i for i,n in enumerate(self.T.columns) }
-    
-    ##
-
-    def get_ancestors(self):
-        """
-        Build a dictionary mapping each clade index (i.e., column index in T) to a list of its ancestor clade indices.
-        A clade i is considered an ancestor of clade j if every cell in clade j is also in clade i.
-        """
-
-        T = self.T.values
-        ancestors = {}
-        num_clades = T.shape[1]
-
-        for j in range(num_clades):
-            ancestor_list = []
-            for i in range(num_clades):
-                if i == j:
-                    continue
-                if np.all(T[:,j] <= T[:,i]):
-                    ancestor_list.append(i)
-            ancestors[j] = ancestor_list
-
-        self.ancestors = ancestors
 
     ##
 
-    def compute_d(self, D, mask):
+    def resolve_ambiguous_clones(self, df_predict, s_treshold=.7):
         """
-        Compute the distance ratio for clade j.
-        D: Torch tensor (2D dissimilarity matrix).
-        mask: Torch tensor (boolean vector encoding cell membership to clade j).
-        Returns mean_inside / mean_outside.
-        """
-        # Get inside and outside distances using boolean indexing.
-        inside = D[mask][:,mask]
-        outside = D[~mask][:,~mask] if (~mask).sum() > 0 else torch.tensor([1.0])
-        mean_inside = inside.sum() if inside.numel() > 0 else torch.tensor(1.0)
-        mean_outside = outside.sum() if outside.numel() > 0 else torch.tensor(1.0)
-        return mean_inside / (mean_outside+.0001)
-
-    ##
-
-    def compute_e(self, M, j):
-        """
-        Compute the mutation enrichment for clade j.
-        M: Torch tensor (mutation enrichment matrix).
-        j: clade index.
-        Returns the mean MT-SNV enrichment for clade j.
-        """
-        return M[:,j].mean()
-
-    ##
-
-    def compute_empirical_priors(self, method='mut_clades', fixed_logit_value=2.5, extend_ancestors=True, 
-                                extend_children=True, min_clade_prevalence=.01, max_clade_prevalence=.5):
-        """
-        Compute logit priors to initialize clone optimization.
+        Final clonal resolution process. 
+        Tries to merge similar clones iteratively.
+        First, the (raw) AF matrix is aggregated at the clonal level using MiTo clones.
+        Then, clone-clone similarities are comuputed using (1-) weighted jaccard distances
+        among these aggregated MT-SNVs clonal profiles. At each round, the tiniest "ambiguous"
+        clone is selected for merging with its smallest "interacting clone". If the merge is 
+        successfull, the clonal assignment table is updated and the process go through other 
+        merging rounds, until no ambiguous clones remain. Unresolved clones (if any) are 
+        annotated as NaNs in the final MiTo clone column which is appended to self.tree.cell_meta.
         """
 
-        if method == 'mut_clades':
+        self.params['merging_treshold'] = s_treshold
+        remained_unresolved = []
+        try_merge = True
+        n_trials = 0
 
-            priors = -fixed_logit_value * np.ones(self.T.shape[1])
-            candidate_set = list(set(self.M.values.argmax(axis=1)))
+        # Here we go
+        while try_merge:
 
-            extended_set = []
-            for i in candidate_set:
-                if i != 0 and extend_ancestors:
-                    ancestor = self.tree.get_all_ancestors(self.idx_to_clade_mapping[i])[0]
-                    ancestor_idx = self.clade_to_idx_mapping[ancestor]
-                    extended_set.extend([i, ancestor_idx])
-                if i in self.idx_to_clade_mapping and extend_children:
-                    children = self.tree.children(self.idx_to_clade_mapping[i])
-                    for child in children:
-                        if child in self.tree.internal_nodes:
-                            child_idx = self.clade_to_idx_mapping[child]
-                            extended_set.append(child_idx)
+            logging.info(f'n trials: {n_trials}')
 
-            candidate_set = list(set(extended_set) - {0})
-            candidate_set = [ 
-                node for node in candidate_set if \
-                (self.T.iloc[:,node].sum() >= min_clade_prevalence * self.T.shape[0]) & \
-                (self.T.iloc[:,node].sum() <= max_clade_prevalence * self.T.shape[0])
-            ]
-            priors[candidate_set] = fixed_logit_value
-        
-        elif method =='smooth':
-            
-            scale = lambda x: (x-x.mean()) / x.std()
-            priors = scale(self.M.mean(axis=0))
-        
-        else:
+            # Aggregate
+            X_agg = (
+                self.tree.layers['raw']
+                .join(df_predict[['MiTo clone']])
+                .groupby('MiTo clone')
+                .median()
+            )
+            X_agg = X_agg.loc[:,np.any(X_agg>0, axis=0)]
 
-            logging.info('Priors set to None.')
-            priors = None
+            # Compute similarity of putative clones (i.e., aggregated profiles)
+            w = np.nanmedian(np.where(X_agg>0, X_agg, np.nan), axis=0)
+            S_agg = 1-weighted_jaccard((X_agg>0).astype(int), w=w)
+            self.S_aggregate = pd.DataFrame(S_agg, index=X_agg.index, columns=X_agg.index)
 
-        self.priors = priors
+            # Spot interacting clones 
+            S_agg_long = (
+                pd.DataFrame(
+                    np.triu(S_agg, k=1), 
+                    index=X_agg.index.to_list(), 
+                    columns=X_agg.index.to_list()
+                )
+                .melt(ignore_index=False)
+                .reset_index()
+            )
+            S_agg_long.columns = ['clone1', 'clone2', 'similarity']
+            S_agg_long = (
+                S_agg_long
+                .query('clone1!=clone2 and similarity>=@s_treshold')
+                .reset_index(drop=True).drop_duplicates()
+            )
+            if S_agg_long.shape[0] == 0:
+                logging.info('No ambiguous clones remaining!')
+                try_merge = False
+            else:
+                logging.info(f'n {S_agg_long.shape[0]} ambiguous clonal interactions found')
 
-    ##
+            # Attempt merging, starting from the tiniest ambiguous clone
 
-    # def rescale_loss_terms(self, k_soft, d_avg, e_avg):
+            # Gather clonal stats
+            clone_df = (
+                df_predict
+                .loc[:,['MiTo clone', 'lca', 'n cells', 'muts']]
+                .reset_index(drop=True).drop_duplicates()
+                .sort_values('n cells')
+                .dropna()
+                .rename(columns={'MiTo clone':'old'})
+                .set_index('old')
+            )
+            self.clone_df = clone_df
 
-    ##
+            # Find tiniest ambiguous clone
+            if try_merge:
+                ambiguous_clones = set(S_agg_long['clone1']) | set(S_agg_long['clone2'])
+                logging.info(f'n {len(ambiguous_clones)} ambiguous clones')
+                for clone in clone_df.index:
+                    if clone in ambiguous_clones and not clone in remained_unresolved:
+                        try_merge = True
+                        logging.info(f'Merge clone: {clone}')
+                        break
+                    else:
+                        try_merge = False
 
-    def cell_assignment(self):
-        """
-        Final cell assignment.
-        """
+            if try_merge:
 
-        if self.final_binary_selection is None:
-            raise ValueError('Call find_clones first!')
+                # Find the tinest ambiguous clone interactor
+                interactions = S_agg_long.query('clone1==@clone or clone2==@clone')
+                other_clones = []
+                for i in range(interactions.shape[0]):
+                    int_clones = interactions.iloc[i,:].values[:2]
+                    other_clones.append(int_clones[int_clones!=clone][0])
+                int_clone = clone_df.loc[other_clones].sort_values('n cells').index[0]
 
-        selected_clades = self.T.columns[self.final_binary_selection.astype(bool)]
-        ranked_clades = self.T[selected_clades].sum(axis=0).sort_values(ascending=False).index
+                # Find lca new clone
+                lca_clone = clone_df.loc[clone, 'lca']
+                lca_int_clone = clone_df.loc[int_clone, 'lca']
+                new_lca = self.tree.find_lca(*[lca_clone, lca_int_clone])
+                # new_clone_cells = tree.leaves_in_subtree(new_lca)
 
-        if not (self.T[selected_clades].sum(axis=1)==1).all():
-            raise ValueError('Non-disjoint final MT-clones...')
+                # Merge clones mutations 
+                clone_muts = set(clone_df.loc[clone, 'muts'].split(';'))
+                int_clone_muts = set(clone_df.loc[int_clone, 'muts'].split(';'))
+                new_clone_muts = ';'.join(list(clone_muts | int_clone_muts))
 
-        labels = np.array([ np.nan for i in range(self.T.shape[0]) ], dtype='O')
-        for i,clade in enumerate(ranked_clades):
-            labels[self.T[clade].values==1] = f'MiTo clone {i}'
+                # Check merging possibility
+                cells_merged_clone = (
+                    df_predict
+                    .loc[ lambda x: (x['MiTo clone'] == clone) | (x['MiTo clone'] == int_clone)]
+                    .index
+                )
+                cells_clone = df_predict.loc[lambda x: x['MiTo clone'] == clone].index
+                cells_int_clone = df_predict.loc[lambda x: x['MiTo clone'] == int_clone].index
 
-        assert (self.T.index == self.tree.cell_meta.index).all()
+                # test1 = len(set(new_clone_cells) - set(cells_merged_clone)) == 0
+                test2 =  len(set(cells_merged_clone) - (set(cells_clone) | set(cells_int_clone)) ) == 0
 
-        self.selected_clades = selected_clades
-        self.tree.cell_meta['MiTo clone'] = labels
-        self.tree.cell_meta['MiTo clone'] = pd.Categorical(self.tree.cell_meta['MiTo clone'])
+                if test2: # and test1
+                    df_predict.loc[cells_merged_clone, 'MiTo clone'] = int_clone
+                    df_predict.loc[cells_merged_clone, 'median cell similarity'] = self.tree.get_attribute(new_lca, 'similarity')
+                    df_predict.loc[cells_merged_clone, 'n cells'] = cells_merged_clone.size
+                    df_predict.loc[cells_merged_clone, 'lca'] = new_lca
+                    df_predict.loc[cells_merged_clone, 'muts'] = new_clone_muts
+                    logging.info(f'Successfully merged clone {clone} and {int_clone}')
+                else:
+                    logging.info(f'{clone} and {int_clone} cannot be merged')
+                    remained_unresolved.append(clone)
 
-    ##
+                n_trials += 1
+
+            else:
+
+                logging.info(f'Finished merging!')
+
+        # Put final, unresolved_clones as NaNs
+        df_predict.loc[df_predict['MiTo clone'].isin(remained_unresolved), 'MiTo clone'] = np.nan
+        sizes = df_predict['MiTo clone'].value_counts()
+        mapping = { x : f'MT-{i}' for i,x in enumerate(sizes.index) }
+        df_predict['MiTo clone'] = df_predict['MiTo clone'].map(mapping)
+        self.clonal_nodes = df_predict.loc[lambda x: ~x['MiTo clone'].isna(), 'lca'].unique().tolist()
+
+        # Add info to cell meta
+        logging.info('Add clonal labels to tree.cell_meta')
+        self.tree.cell_meta = self.tree.cell_meta.join(df_predict)
+
+    ##  
 
     def extract_mut_order(self, pval_tresh=.01):
         """
@@ -261,158 +272,187 @@ class MiToTreeAnnotator():
 
     ##
 
-    def find_clones(self, alpha=1, beta=1, gamma=1, delta=1, supp_factor=10, num_epochs=1000, 
-                    early_stopping=True, temperature=1.0, min_temperature=0.01, anneal_rate=0.997, learning_rate=0.001):
+    def infer_clones(self, similarity_percentile=85, mut_enrichment_treshold=5, merging_treshold=.7):
         """
-        Find MT-clones via gradient descent optimization of a custom loss function.
-        Optimal clone assignment is achieved by minimizing a loss function that includes:
-            1. Average (across clones) ratio between inside-clone vs outside-clone sum of cell-cell distances in MT-SNVs space (d) 
-            2. Average (across clones) mutation enrichment (e)
-            3. Total number of clones (k)
-        (Soft) combinatorial pick of clade sets is subject to hierarchical constraints during optimization, to produce final,
-        non-nested clonal labels.
+        A MT-SNVs-specific re-adaptation of the recursive approach described in the MethylTree paper 
+        (... et al., 2025).
         """
-        
-        # Start
-        t = Timer()
-        t.start()
-        logging.info('Start to optimize clonal structure...')
 
-        # Convert input matrices from pandas to torch tensors.
-        T = torch.from_numpy(self.T.values.astype(np.float32))
-        M = torch.from_numpy(self.M.values.astype(np.float32))
-        D = torch.from_numpy(self.D.values.astype(np.float32))
+        logging.info('Prep data for clonal inference.')
 
-        # Initialize logits for each clade (i.e., the learnable parameters of our model)
-        if self.priors is not None:
-            assert len(self.priors) == T.shape[1]
-            logits = self.priors
-        else:
-            logits = np.random.normal(size=T.shape[1])
-        
-        # Transform priors with a sigmoid and store as tree node attributes and class slots
-        initial_assignments = []
-        for node,l in zip(self.T.columns, logits):
-            z = 1 / (1 + np.exp(-l))
-            initial_assignments.append(z)
-            self.tree.set_attribute(node, 'prior_soft_selection', z)
-        self.initial_assignments = np.array(initial_assignments)
+        # Prep lists for recursion
+        tree_list = []
+        df_list = []
 
-        # Set optimizer and params
-        logits = torch.tensor(logits, requires_grad=True) 
-        optimizer = torch.optim.Adam(params=[logits], lr=learning_rate)
-        logging.info('Set optimizer and learnable clade activation values.')
+        # Get tree topology and mutation_enrichment tables
+        self.get_T()
+        self.get_M()
 
-        # Main optimization loop.
+        # Set usable_mutations
+        is_enriched = (self.M.values>=mut_enrichment_treshold).any(axis=1)
+        mut_enrichment = self.M.loc[is_enriched,:]
+        usable_mutations = set(mut_enrichment.index)
+        self.params['mut_enrichment_treshold'] = len(usable_mutations)
+        self.params['n total mutations'] = self.tree.layers['raw'].shape[1]
+        self.params['n usable_mutations'] = len(usable_mutations)
 
-        # Set tracking lists
-        AV_DRATIOS = []; SUM_KSOFT = []; AV_ENRICHMENTS = []; CELL_COVERAGE = []; LOSSES = []
-        SOFT_SELECTIONS = []
-        TEMPERATURES = []
+        # Convert the dissimilarity into similarity matrix
+        D = self.tree.get_dissimilarity_map()
+        S = 1-D
+        # Calculate similarity treshold
+        similarity_treshold = np.percentile(S.values, similarity_percentile)
+        self.params['similarity_treshold'] = similarity_treshold
 
-        # Initiate loss and set convergence tolerance
-        prev_loss = None
-        convergence_tol = .0001
+        # Set median similarity among clade cells as tree node attributes
+        clades = get_clades(self.tree, with_singletons=True)
+        for node in clades:
+            cells = list(clades[node])
+            s = np.median(S.loc[cells,cells].values)
+            self.tree.set_attribute(node, 'similarity', s)
 
-        # (Pre-) compute statistics (d and e values), per clade.
-        logging.info('Calculate per-clade statistics.')
-        d_values = []
-        e_values = []
-        for j in range(T.shape[1]):
-            S_j = T[:,j].bool()
-            d_j = self.compute_d(D,S_j)
-            e_j = self.compute_e(M,j)
-            d_values.append(d_j)
-            e_values.append(e_j)
-        d_values = torch.stack(d_values)
-        e_values = torch.stack(e_values)
+        ##
 
-        # Here we go
-        logging.info('Main optimization loop...')
-        for epoch in range(num_epochs):
+        # Internal, recursive functions =========================================================== #
 
-            # Soft selection based on current iteration logits
-            soft_selections_list = []
-            for j in range(T.shape[1]):
-                if self.ancestors[j]:
-                    suppression = supp_factor * torch.sum(torch.stack([soft_selections_list[k] for k in self.ancestors[j]]))
-                    value = torch.sigmoid((logits[j] - suppression) / temperature)
-                else:
-                    value = torch.sigmoid(logits[j] / temperature)
-                soft_selections_list.append(value)
+        def _find_clones(tree, node, usable_mutations):
 
-            soft_selections = torch.stack(soft_selections_list)
-            k_soft = soft_selections.sum()
+            if not usable_mutations:
+                _collect_clones(tree, node)
+                return
 
-            # Weighted d and e averages
-            epsilon = 1e-8
-            d_avg = torch.sum(soft_selections * d_values) / (soft_selections.sum() + epsilon)
-            e_avg = torch.sum(soft_selections * e_values) / (soft_selections.sum() + epsilon)
+            if tree.is_leaf(node):
+                _collect_clones(tree, node)
+            elif (
+                ((mut_enrichment.loc[list(usable_mutations), node] >= mut_enrichment_treshold).any()) & \
+                (tree.get_attribute(node, 'similarity') >= similarity_treshold) & \
+                (not tree.is_leaf(node))
+            ):
+                triggered = {
+                    mut for mut in usable_mutations \
+                    if mut_enrichment.loc[mut,node] >= mut_enrichment_treshold 
+                }
+                tree.set_attribute(node, 'muts', list(triggered))
+                new_usable = usable_mutations - triggered
+                _refine_clones(tree, node, new_usable)
+            else:
+                for child in tree.children(node):
+                    _find_clones(tree, child, usable_mutations)
 
-            # Cell coverage
-            not_covered = torch.prod(1 - (T * soft_selections), dim=1) 
-            not_covered_avg = torch.mean(not_covered)
+        ##
 
-            # Rescale loss components
-            # ...
-            
-            # Loss definition
-            loss = alpha * d_avg + beta * k_soft - gamma * e_avg + delta * not_covered_avg
+        def _collect_clones(tree, node_tmp):
+            tree_list.append(node_tmp)
+            leaves = tree.leaves_in_subtree(node_tmp)
+            df_tmp = pd.DataFrame({"cell": leaves})
+            df_tmp["MiTo clone"] = f"MT-{len(df_list)}"
+            df_tmp["median cell similarity"] = tree.get_attribute(node_tmp, 'similarity')
+            df_tmp["n cells"] = len(leaves)
+            df_tmp['lca'] = tree.find_lca(*leaves) if len(leaves)>1 else np.nan
+            try:
+                df_tmp['muts'] = ';'.join(tree.get_attribute(node_tmp, 'muts'))
+            except:
+                pass
+            df_list.append(df_tmp)
 
-            # Backpropagate and perform i+1 step
-            loss.backward()
-            optimizer.step()
+        ##
 
-            # Modify anneal temperature (to force sharper decisions at next step)
-            temperature = max(temperature * anneal_rate, min_temperature)
-            if epoch % 25 == 0:
-                logging.info(
-                    f"Epoch {epoch}, Loss: {loss.item():.3f} (d: {d_avg:.3f}, e: {e_avg:.3f}, k: {k_soft:.3f}, cell_coverage: {not_covered_avg:.3f}), Temperature: {temperature:.3f}"
-                )          
+        def _collect_clade_info(tree, node_tmp, usable_mutations, level=0, data_list=[], name="0"):
+            valid_tmp = (
+                ((mut_enrichment.loc[list(usable_mutations), node_tmp] >= mut_enrichment_treshold).any()) & \
+                (tree.get_attribute(node_tmp, 'similarity') >= similarity_treshold) & \
+                (not tree.is_leaf(node_tmp))                       
+            )
+            data_list.append([level, int(valid_tmp), len(tree.leaves_in_subtree(node_tmp)), name])
+            for j0, child_tmp in enumerate(tree.children(node_tmp)):
+                _collect_clade_info(
+                    tree, child_tmp, usable_mutations, level=level+1, data_list=data_list, name=f"{name},{j0}"
+                )
 
-            # Loss
-            AV_DRATIOS.append(d_avg.detach().numpy())
-            SUM_KSOFT.append(k_soft.detach().numpy())
-            AV_ENRICHMENTS.append(e_avg.detach().numpy())
-            CELL_COVERAGE.append(not_covered_avg.detach().numpy())
-            LOSSES.append(loss.detach().numpy())
+        ##
 
-            # Params
-            SOFT_SELECTIONS.append(soft_selections.detach().numpy())
-            # Temp
-            TEMPERATURES.append(temperature)
+        def _add_clade_info(tree, node_tmp, target_level, target_name_list, level=0, name="0"):
 
-            # Evaluate loss connvergence and early stopping
-            current_loss = loss.item()
-            loss_converged = prev_loss is not None and abs(current_loss-prev_loss) < convergence_tol
-            if early_stopping and loss_converged:
-                break
-            prev_loss = current_loss
+            valid_list = []
+            invalid_list = []
 
-        # Save learned soft selections, derive final binary selection.
-        logging.info('Wrapping up...')
-        self.soft_selection = np.vstack(SOFT_SELECTIONS)
-        self.final_soft_selection = soft_selections.detach().numpy()
-        self.final_binary_selection = np.where(self.final_soft_selection>0.5,1,0)
-        df_track = pd.DataFrame({
-            'loss' : LOSSES, 
-            'average D ratio' : AV_DRATIOS, 
-            'average mut enrichment' : AV_ENRICHMENTS, 
-            'Soft selection sum' : SUM_KSOFT, 
-            'cell coverage' : CELL_COVERAGE,
-            'T' : TEMPERATURES
-        })
-        self.model_track = df_track
+            for target_name in target_name_list:
+                condition_1 = target_name == name          # this sub-tree matches our target names
+                condition_2 = target_name.startswith(name) # this sub-tree is along the branch that leads to the target sub-tree, therefore acceptable
+                condition_3 = name.startswith(target_name) # this sub-tree is contained within one of the target sub-trees
+                valid_list.append(condition_1)
+                invalid_list.append(condition_2 or condition_3)
 
-        # Attach final_soft_selection as tree attibutes
-        for node,s in zip(self.T.columns, self.final_soft_selection):
-            self.tree.set_attribute(node, 'soft_selection', s)
+            valid = np.sum(valid_list) > 0
 
-        # Assign cells to optmized MT-clones
-        self.cell_assignment()
+            if not valid:
+                valid = np.sum(invalid_list) == 0
+
+            if valid:
+                _collect_clones(tree, node_tmp)
+                if name not in target_name_list:
+                    target_name_list.append(name)
+
+            if level < target_level:
+                for j0, child_tmp in enumerate(tree.children(node_tmp)):
+                    _add_clade_info(
+                        tree,
+                        child_tmp,
+                        target_level,
+                        target_name_list,
+                        level=level + 1,
+                        name=f"{name},{j0}",
+                    )
+            else:
+                return
+
+        ##
+
+        def _refine_clones(tree, node, usable_mutations):
+
+            if not usable_mutations:
+                _collect_clones(tree, node)
+                return
+
+            data_list = []
+            _collect_clade_info(tree, node, usable_mutations, level=0, data_list=data_list)
+            df_tmp_orig = pd.DataFrame(
+                np.array(data_list), columns=["level", "score", "cell_N", "name"]
+            )
+            df_tmp_orig["level"] = df_tmp_orig["level"].astype(int)
+            df_tmp_orig["score"] = df_tmp_orig["score"].astype(float)
+            df_tmp_orig["cell_N"] = df_tmp_orig["cell_N"].astype(int)
+
+            df_tmp = (
+                df_tmp_orig.groupby("level")
+                .agg({"score": "mean", "cell_N": "sum"})
+                .reset_index()
+            )
+            df_tmp = df_tmp[(df_tmp["score"] == 1)]
+            target_level = df_tmp["level"].max()
+            target_name_list = df_tmp_orig[df_tmp_orig["level"] == target_level]["name"].to_list()
+
+            _add_clade_info(tree, node, target_level, target_name_list)
+
+        # ============================================================================================ #
+
+        # Fire recursion!
+        logging.info('Recursive tree split...')
+        tree_ = self.tree.copy()
+        _find_clones(tree_, 'root', usable_mutations)
+
+        # Get results
+        df_predict = pd.concat(df_list, ignore_index=True)
+        df_predict = df_predict.set_index('cell')
+        df_predict.loc[df_predict['muts'].isna(), 'MiTo clone'] = np.nan
+
+        # Resolve over-clustering
+        logging.info('Solve potential over-clustering...')
+        self.resolve_ambiguous_clones(df_predict, s_treshold=merging_treshold)
+
+        # Retrieve mutation order for plotting
         self.extract_mut_order()
 
-        logging.info(f'Final, optimized MT-clones: n={self.final_binary_selection.sum()}. {t.stop()}')
+        logging.info('MiTo clonal inference finished.')
 
 
 ##

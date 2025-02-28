@@ -157,7 +157,7 @@ def _place_tree_and_annotations(
             
             if not all([ cat in categorical_cmap.keys() for cat in x.unique() ]):
 
-                cats = x.unique()
+                cats = x.unique().copy()
                 missing_cats = cats[[ cat not in categorical_cmap.keys() for cat in cats ]]
                 print(f'Missing cats in cmap for meta feat {feat}: {missing_cats}. Adding new colors...')
 

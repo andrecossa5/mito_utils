@@ -94,11 +94,13 @@ def genotype_MiTo_smooth(AD, DP, t_prob=.7, t_vanilla=0, min_AD=2, min_cell_prev
                 layers={'AD':csr_matrix(AD_sample), 'site_coverage':csr_matrix(DP)},
                 uns={'scLT_system':'MAESTER'}
             )
+            w = np.nanmedian(np.where(afm_.X.A>0, afm_.X.A, np.nan), axis=0)
             compute_distances(
                 afm_, 
                 metric='jaccard', 
                 bin_method='vanilla', 
                 binarization_kwargs={'min_AD':1, 't_vanilla':0}, # Loose genotyping.
+                weights=w,
                 verbose=False
             )
             L.append(afm_.obsp['distances'].A)
@@ -205,6 +207,26 @@ def call_genotypes(afm, bin_method='MiTo', t_vanilla=.0, min_AD=2, t_prob=.75, m
 ##
 
 
+def weighted_jaccard(M, w):
+    """
+    Vectorized weighted jaccard index from Weng et al., 2024.
+    """
+
+    total = M @ w 
+    M_weighted = M * w 
+    a = M_weighted @ M.T 
+    b = np.expand_dims(total, axis=1) - a  
+    c = np.expand_dims(total, axis=0) - a 
+    denom = a + b + c
+    S = np.where(denom != 0, a / denom, 0.0)
+    D = 1.0 - S
+
+    return D
+
+
+##
+
+
 def preprocess_feature_matrix(
     afm, distance_key='distances', precomputed=False, metric='jaccard', bin_method='MiTo', binarization_kwargs={}, verbose=True
     ):
@@ -299,9 +321,9 @@ def compute_distances(
     if verbose:
         logging.info(f'Compute distances: ncores={ncores}, metric={metric}.')
     if weights is not None and metric=='jaccard':
-        D = 1-pairwise_distances(X, metric=jaccard_score, n_jobs=ncores, force_all_finite=False, sample_weight=weights)
+        D = weighted_jaccard(X, weights)
     elif weights is not None and metric != 'jaccard':
-        raise ValueError('Only jaccard index currently implemented with weights...')
+        raise ValueError('Only jaccard distance is currently implemented with weights.')
     else:
         D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False)
 

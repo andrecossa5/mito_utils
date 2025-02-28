@@ -34,7 +34,6 @@ _solver_kwargs = {
     'shared_muts' : {},
     'greedy' : {},
     'max_cut' : {}
-
 }
 
 
