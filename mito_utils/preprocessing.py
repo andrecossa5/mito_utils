@@ -248,9 +248,9 @@ def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1, k=10, tree_kwa
 
 def filter_afm(
     afm, lineage_column=None, min_cell_number=0, cells=None,
-    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None, min_v_var=1,
+    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None, min_n_var=1,
     fit_mixtures=False, only_positive_deltaBIC=False, path_dbSNP=None, path_REDIdb=None, 
-    compute_enrichment=False, bin_method='MiTo', binarization_kwargs={}, k=10, metric='jaccard',
+    compute_enrichment=False, bin_method='MiTo', binarization_kwargs={}, metric='weighted_jaccard',
     ncores=8, spatial_metrics=False, tree_kwargs={}, return_tree=False
     ):
     """
@@ -323,7 +323,7 @@ def filter_afm(
         Cell filter. The minimum AF threshold at which at least one of the filtered MT-SNVs needs to be detected in a cell to retain the cell in the final dataset. It may be passed as a key-value pair in `filtering_kwargs`. Default is `0.01`.
     variants : list, optional
         Pre-computed list of variants to subset. Default is `None`.
-    min_n_variants : int, optional
+    min_n_var : int, optional
         N of MT-SNVs variants for a cell to be included in the downstream analysis.
     spatial_metrics : bool, optional
         If `True`, compute a list of "spatial" metrics for retained MT-SNVs, including [details missing]. Default is `False`.
@@ -443,8 +443,8 @@ def filter_afm(
 
     # Genotype cells, and filter the one with less than min_n_var mutations
     call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_v_var,:].copy()
-    logging.info(f'Retain cells with at least {min_v_var} MT-SNVs: {afm.shape[0]}')
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_n_var,:].copy()
+    logging.info(f'Retain cells with at least {min_n_var} MT-SNVs: {afm.shape[0]}')
  
     # Bimodal mixture modelling: deltaBIC (MQuad-like) and max AD in at least one cell (Weng et al., 2024)
     if fit_mixtures:
@@ -457,15 +457,14 @@ def filter_afm(
         logging.info(f'Remove MT-SNVs with no +cells having at least {max_AD_counts} AD counts')
 
     # Compute cell-cell distances and filter variants significantly auto-correlated.
-    w = np.nanmedian(np.where(afm.X.A>0, afm.X.A, np.nan), axis=0)
-    compute_distances(afm, precomputed=True, metric=metric, weights=w, ncores=ncores)
+    compute_distances(afm, precomputed=True, metric=metric, ncores=ncores)
     afm = filter_variant_moransI(afm)
     logging.info(f'Filter only MT-SNVs with significant spatial auto-correlation (i.e., Moran I statistics).')
     
     # Final fixes
-    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_v_var,:].copy()
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_n_var,:].copy()
     annotate_vars(afm, overwrite=True)
-    logging.info(f'Retain cells with at least {min_v_var} MT-SNVs: {afm.shape[0]}')
+    logging.info(f'Retain cells with at least {min_n_var} MT-SNVs: {afm.shape[0]}')
     logging.info(f'Last (optional) filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
     
     ##
@@ -500,6 +499,7 @@ def filter_afm(
         'spatial_metrics' : spatial_metrics,
         'n_dbSNP' : n_dbSNP,
         'n_REDIdb' : n_REDIdb,
+        'min_n_var' : min_n_var
     }
     afm.uns['char_filter'].update(filtering_kwargs)
     

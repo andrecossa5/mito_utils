@@ -287,8 +287,8 @@ def preprocess_feature_matrix(
 
 
 def compute_distances(
-    afm, distance_key='distances', metric='jaccard', precomputed=False,
-    bin_method='MiTo', binarization_kwargs={}, weights=None, ncores=1, rescale=True, verbose=True
+    afm, distance_key='distances', metric='weighted_jaccard', precomputed=False,
+    bin_method='MiTo', binarization_kwargs={}, ncores=1, rescale=True, verbose=True
     ):
     """
     Calculates pairwise cell--cell (or sample-) distances in some character space (e.g., MT-SNVs mutation space).
@@ -320,10 +320,9 @@ def compute_distances(
     # Calculate distances (handle weights, if necessary)
     if verbose:
         logging.info(f'Compute distances: ncores={ncores}, metric={metric}.')
-    if weights is not None and metric=='jaccard':
-        D = weighted_jaccard(X, weights)
-    elif weights is not None and metric != 'jaccard':
-        raise ValueError('Only jaccard distance is currently implemented with weights.')
+    if metric=='weighted_jaccard':
+        w = np.nanmedian(np.where(afm.X.A>0, afm.X.A, np.nan), axis=0)
+        D = weighted_jaccard(X, w)
     else:
         D = pairwise_distances(X, metric=metric, n_jobs=ncores, force_all_finite=False)
 
