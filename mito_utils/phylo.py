@@ -316,10 +316,9 @@ def get_internal_node_stats(tree):
         }, 
         index=tree.internal_nodes
     )
-    try:
-        df['mut'] = [ tree.get_attribute(node, 'mut') for node in tree.internal_nodes ]
-    except:
-        pass
+    if 'lca' in tree.cell_meta:
+        clades = tree.cell_meta['lca'].loc[lambda x: ~x.isna()].unique()
+        df['mut_clade'] = [ True if node in clades else False for node in tree.internal_nodes ]
     
     return df 
 
