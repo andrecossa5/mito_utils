@@ -95,7 +95,7 @@ class MiToTreeAnnotator():
 
     ##
 
-    def resolve_ambiguous_clones(self, df_predict, s_treshold=.7):
+    def resolve_ambiguous_clones(self, df_predict, s_treshold=.7, add_to_meta=False):
         """
         Final clonal resolution process. 
         Tries to merge similar clones iteratively.
@@ -237,9 +237,11 @@ class MiToTreeAnnotator():
         df_predict['MiTo clone'] = df_predict['MiTo clone'].map(mapping)
         self.clonal_nodes = df_predict.loc[lambda x: ~x['MiTo clone'].isna(), 'lca'].unique().tolist()
 
-        # Add info to cell meta
-        logging.info('Add clonal labels to tree.cell_meta')
-        self.tree.cell_meta = self.tree.cell_meta.join(df_predict)
+        # Check if the df_predict info should be added to self.tree.cell_meta
+        if add_to_meta:
+            self.tree.cell_meta = self.tree.cell_meta.join(df_predict)
+
+        return df_predict['MiTo clone']
 
     ##  
 
@@ -272,7 +274,7 @@ class MiToTreeAnnotator():
 
     ##
 
-    def infer_clones(self, similarity_percentile=85, mut_enrichment_treshold=5, merging_treshold=.7):
+    def infer_clones(self, similarity_percentile=85, mut_enrichment_treshold=5, merging_treshold=.7, add_to_meta=False):
         """
         A MT-SNVs-specific re-adaptation of the recursive approach described in the MethylTree paper 
         (... et al., 2025).
@@ -285,14 +287,15 @@ class MiToTreeAnnotator():
         df_list = []
 
         # Get tree topology and mutation_enrichment tables
-        self.get_T()
-        self.get_M()
+        if self.T is None or self.M is None: 
+            self.get_T()
+            self.get_M()
 
         # Set usable_mutations
         is_enriched = (self.M.values>=mut_enrichment_treshold).any(axis=1)
         mut_enrichment = self.M.loc[is_enriched,:]
         usable_mutations = set(mut_enrichment.index)
-        self.params['mut_enrichment_treshold'] = len(usable_mutations)
+        self.params['mut_enrichment_treshold'] = mut_enrichment_treshold
         self.params['n total mutations'] = self.tree.layers['raw'].shape[1]
         self.params['n usable_mutations'] = len(usable_mutations)
 
@@ -447,12 +450,57 @@ class MiToTreeAnnotator():
 
         # Resolve over-clustering
         logging.info('Solve potential over-clustering...')
-        self.resolve_ambiguous_clones(df_predict, s_treshold=merging_treshold)
+        labels = self.resolve_ambiguous_clones(df_predict, s_treshold=merging_treshold, add_to_meta=add_to_meta)
+
+        return labels
+    
+    ##
+
+    def clonal_inference(
+        self, 
+        similarity_tresholds = [ 80, 85, 90, 95, 97, 98 ],
+        mut_enrichment_tresholds = [ 2, 3, 5 ],
+        merging_treshold = [ .7 ]
+        ):
+        """
+        Optimize tresholds for self.infer_clones and pick clonal labels with
+        best silhouette scores across the attempted splits.
+        """
+
+        T = Timer()
+        T.start()
+
+        # Grid-search
+        from itertools import product
+        combos = list(product(similarity_tresholds, mut_enrichment_tresholds, merging_treshold))
+        logging.info(f'Start Grid Search. n hyper-parameter combinations to explore: {len(combos)}')
+
+        silhouettes = [] 
+        for s,m,j in combos:
+            logging.info(f'Perform clonal inference with params: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
+            labels = self.infer_clones(
+                similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=False
+            )
+            test = labels.isna()
+            labels = labels.loc[~test]
+            D = self.tree.get_dissimilarity_map().loc[labels.index,labels.index]
+            assert (D.index == labels.index).all()
+            sil = silhouette_score(X=D.values, labels=labels.values) if labels.unique().size>2 else 0
+            silhouettes.append(sil)
+            print('\n')
+
+        # Pick optimal combination, and perform final splitting
+        self.silhouettes = np.array(silhouettes)
+        s, m, j = combos[np.argmax(silhouettes)]
+        logging.info(f'Hyper-params chosen: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
+        labels = self.infer_clones(
+            similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=True
+        )
 
         # Retrieve mutation order for plotting
         self.extract_mut_order()
 
-        logging.info('MiTo clonal inference finished.')
+        logging.info(f'MiTo clonal inference finished. {T.stop()}')
 
 
 ##
