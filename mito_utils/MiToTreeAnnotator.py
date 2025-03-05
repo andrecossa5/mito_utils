@@ -522,13 +522,15 @@ class MiToTreeAnnotator():
             )
             .sort_values('score', ascending=False)
         )
-        chosen = (
+        ranked_solutions = (
             self.solutions
             .query('unassigned<=@max_fraction_unassigned')
             .sort_values('score', ascending=False)
-            .index[0]
         )
-        s, m, j = combos[chosen]
+        if ranked_solutions.shape[0]>0:
+            s, m, j = combos[ranked_solutions.index[0]]
+        else:
+            raise ValueError(f'None of the solution tested falls below the max_fraction_unassigned trehsold: {max_fraction_unassigned}')
         
         # Final round
         logging.info(f'Hyper-params chosen: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
