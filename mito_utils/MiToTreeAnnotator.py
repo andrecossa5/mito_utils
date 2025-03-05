@@ -26,6 +26,7 @@ class MiToTreeAnnotator():
         self.T = None
         self.M = None
         self.mut_df = None
+        self.solutions = None
         self.ordered_muts = None
         self.clone_df = None
         self.clonal_nodes = None
@@ -241,7 +242,7 @@ class MiToTreeAnnotator():
         if add_to_meta:
             self.tree.cell_meta = self.tree.cell_meta.join(df_predict)
 
-        return df_predict['MiTo clone']
+        return df_predict['MiTo clone'], df_predict['median cell similarity']
 
     ##  
 
@@ -450,18 +451,21 @@ class MiToTreeAnnotator():
 
         # Resolve over-clustering
         logging.info('Solve potential over-clustering...')
-        labels = self.resolve_ambiguous_clones(df_predict, s_treshold=merging_treshold, add_to_meta=add_to_meta)
+        labels, similarities = self.resolve_ambiguous_clones(df_predict, s_treshold=merging_treshold, add_to_meta=add_to_meta)
 
-        return labels
+        return labels, similarities
     
     ##
 
     def clonal_inference(
         self, 
-        similarity_tresholds = [ 80, 85, 90, 95, 97, 98 ],
-        mut_enrichment_tresholds = [ 2, 3, 5 ],
-        merging_treshold = [ .7 ],
-        max_fraction_unassigned = .15
+        similarity_tresholds=[ 85, 90, 95, 98 ],
+        mut_enrichment_tresholds=[ 3, 5, 10 ],
+        merging_treshold=[ .25, .5, .75 ],
+        max_fraction_unassigned=.05,
+        weight_silhouette=.3,
+        weight_n_clones=.4,
+        weight_similarity=.3
         ):
         """
         Optimize tresholds for self.infer_clones and pick clonal labels with
@@ -475,43 +479,65 @@ class MiToTreeAnnotator():
         from itertools import product
         combos = list(product(similarity_tresholds, mut_enrichment_tresholds, merging_treshold))
         logging.info(f'Start Grid Search. n hyper-parameter combinations to explore: {len(combos)}')
+        print('\n')
 
         silhouettes = [] 
         unassigned = []
+        n_clones = []
+        similarities = []
 
         i = 0
         for s,m,j in combos:
             logging.info(f'Grid Search: {i}/{len(combos)}')
-            logging.info(f'Perform clonal inference with params: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
-            labels = self.infer_clones(
+            logging.info(f'Perform clonal inference with params: similarity_percentile={s}, merging_treshold={m}, ={j}')
+            labels, sim = self.infer_clones(
                 similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=False
             )
             test = labels.isna()
             labels = labels.loc[~test]
             D = self.tree.get_dissimilarity_map().loc[labels.index,labels.index]
             assert (D.index == labels.index).all()
-            sil = silhouette_score(X=D.values, labels=labels.values) if labels.unique().size>2 else 0
+            sil = silhouette_score(X=D.values, labels=labels.values, metric='precomputed') if labels.unique().size>2 else 0
             silhouettes.append(sil)
             unassigned.append(test.sum()/labels.size)
+            n_clones.append(labels.unique().size)
+            similarities.append(sim.mean())
             print('\n')
             i += 1
 
         # Pick optimal combination, and perform final splitting
+        self.solutions = (
+            pd.DataFrame({'silhouette':silhouettes, 'unassigned':unassigned, 'n_clones':n_clones, 'similarity':similarities})
+            .assign(
+                sil_rescaled = lambda x: rescale(x['silhouette']),
+                sim_rescaled = lambda x: rescale(x['similarity']),
+                n_clones_rescaled = lambda x: rescale(-x['n_clones']),
+                score = lambda x: 
+                    weight_silhouette * x['sil_rescaled'] + \
+                    weight_n_clones * x['n_clones_rescaled'] + \
+                    weight_similarity * x['similarity']
+            )
+            .sort_values('score', ascending=False)
+        )
         chosen = (
-            pd.DataFrame({'silhouettes':silhouettes, 'unassigned':unassigned})
+            self.solutions
             .query('unassigned<=@max_fraction_unassigned')
-            .sort_values('silhouettes', ascending=False)
+            .sort_values('score', ascending=False)
             .index[0]
         )
         s, m, j = combos[chosen]
+        print('\n')
+        
+        # Final round
         logging.info(f'Hyper-params chosen: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
-        labels = self.infer_clones(
+        _,_ = self.infer_clones(
             similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=True
         )
 
         # Retrieve mutation order for plotting
         self.extract_mut_order()
 
+        print('\n')
         logging.info(f'MiTo clonal inference finished. {T.stop()}')
 
 
