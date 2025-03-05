@@ -460,7 +460,8 @@ class MiToTreeAnnotator():
         self, 
         similarity_tresholds = [ 80, 85, 90, 95, 97, 98 ],
         mut_enrichment_tresholds = [ 2, 3, 5 ],
-        merging_treshold = [ .7 ]
+        merging_treshold = [ .7 ],
+        max_fraction_unassigned = .15
         ):
         """
         Optimize tresholds for self.infer_clones and pick clonal labels with
@@ -476,7 +477,11 @@ class MiToTreeAnnotator():
         logging.info(f'Start Grid Search. n hyper-parameter combinations to explore: {len(combos)}')
 
         silhouettes = [] 
+        unassigned = []
+
+        i = 0
         for s,m,j in combos:
+            logging.info(f'Grid Search: {i}/{len(combos)}')
             logging.info(f'Perform clonal inference with params: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
             labels = self.infer_clones(
                 similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=False
@@ -487,11 +492,18 @@ class MiToTreeAnnotator():
             assert (D.index == labels.index).all()
             sil = silhouette_score(X=D.values, labels=labels.values) if labels.unique().size>2 else 0
             silhouettes.append(sil)
+            unassigned.append(test.sum()/labels.size)
             print('\n')
+            i += 1
 
         # Pick optimal combination, and perform final splitting
-        self.silhouettes = np.array(silhouettes)
-        s, m, j = combos[np.argmax(silhouettes)]
+        chosen = (
+            pd.DataFrame({'silhouettes':silhouettes, 'unassigned':unassigned})
+            .query('unassigned<=@max_fraction_unassigned')
+            .sort_values('silhouettes', ascending=False)
+            .index[0]
+        )
+        s, m, j = combos[chosen]
         logging.info(f'Hyper-params chosen: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
         labels = self.infer_clones(
             similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=True
