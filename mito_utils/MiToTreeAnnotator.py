@@ -183,7 +183,7 @@ class MiToTreeAnnotator():
 
             if try_merge:
 
-                # Find the tinest ambiguous clone interactor
+                # Find the tiniest ambiguous clone interactor
                 interactions = S_agg_long.query('clone1==@clone or clone2==@clone')
                 other_clones = []
                 for i in range(interactions.shape[0]):
@@ -194,8 +194,10 @@ class MiToTreeAnnotator():
                 # Find lca new clone
                 lca_clone = clone_df.loc[clone, 'lca']
                 lca_int_clone = clone_df.loc[int_clone, 'lca']
-                new_lca = self.tree.find_lca(*[lca_clone, lca_int_clone])
-                # new_clone_cells = tree.leaves_in_subtree(new_lca)
+                if lca_clone == lca_int_clone:
+                    new_lca = lca_clone
+                else:
+                    new_lca = self.tree.find_lca(*[lca_clone, lca_int_clone])
 
                 # Merge clones mutations 
                 clone_muts = set(clone_df.loc[clone, 'muts'].split(';'))
@@ -459,7 +461,7 @@ class MiToTreeAnnotator():
 
     def clonal_inference(
         self, 
-        similarity_tresholds=[ 85, 90, 95, 98 ],
+        similarity_tresholds=[ 85, 90, 95, 99 ],
         mut_enrichment_tresholds=[ 3, 5, 10 ],
         merging_treshold=[ .25, .5, .75 ],
         max_fraction_unassigned=.05,
@@ -489,7 +491,7 @@ class MiToTreeAnnotator():
         i = 0
         for s,m,j in combos:
             logging.info(f'Grid Search: {i}/{len(combos)}')
-            logging.info(f'Perform clonal inference with params: similarity_percentile={s}, merging_treshold={m}, ={j}')
+            logging.info(f'Perform clonal inference with params: similarity_percentile={s}, mut_enrichment_treshold={m}, merging_treshold={j}')
             labels, sim = self.infer_clones(
                 similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=False
             )
@@ -507,7 +509,8 @@ class MiToTreeAnnotator():
 
         # Pick optimal combination, and perform final splitting
         self.solutions = (
-            pd.DataFrame({'silhouette':silhouettes, 'unassigned':unassigned, 'n_clones':n_clones, 'similarity':similarities})
+            pd.DataFrame({'silhouette':silhouettes, 'unassigned':unassigned, 
+                          'n_clones':n_clones, 'similarity':similarities})
             .assign(
                 sil_rescaled = lambda x: rescale(x['silhouette']),
                 sim_rescaled = lambda x: rescale(x['similarity']),
@@ -526,10 +529,10 @@ class MiToTreeAnnotator():
             .index[0]
         )
         s, m, j = combos[chosen]
-        print('\n')
         
         # Final round
         logging.info(f'Hyper-params chosen: similarity_percentile={s}, mut_enrichment_treshold={m}, mut_enrichment_treshold={j}')
+        print('\n')
         _,_ = self.infer_clones(
             similarity_percentile=s, mut_enrichment_treshold=m, merging_treshold=j, add_to_meta=True
         )
