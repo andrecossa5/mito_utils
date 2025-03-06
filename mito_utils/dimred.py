@@ -113,7 +113,7 @@ def _get_D(afm, distance_key, **kwargs):
 
 def reduce_dimensions(
     afm, layer='bin', distance_key='distances', seed=1234, method='UMAP', k=15, 
-    n_comps=2, ncores=8, metric='jaccard', bin_method='vanilla', binarization_kwargs={}
+    n_comps=2, ncores=8, metric='weighted_jaccard', bin_method='MiTo', binarization_kwargs={}
     ):
     """
     Reduce dimension of input Allelic Frequency Matrix.

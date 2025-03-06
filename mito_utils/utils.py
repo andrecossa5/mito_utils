@@ -20,6 +20,12 @@ import scanpy as sc
 ##
 
 
+path_assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
+
+
+##
+
+
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
@@ -316,6 +322,23 @@ def rank_items(df, groupings, metrics, weights, metric_annot):
     df_agg = df_agg.sort_values('Overall score', ascending=False)
 
     return df_agg
+
+
+##
+
+
+def load_mut_spectrum_ref():
+    df = pd.read_csv(os.path.join(path_assets, 'weng2024_mut_spectrum_ref.csv'), index_col=0)
+    return df
+
+
+##
+
+
+def load_mt_gene_annot():
+    df = pd.read_csv(os.path.join(path_assets, 'formatted_table_wobble.csv'), index_col=0)
+    df['mut'] = df['Position'].astype(str) + '_' + df['Reference'] + '>' + df['Variant']
+    return df
 
 
 ##
