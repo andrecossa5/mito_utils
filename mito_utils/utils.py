@@ -162,45 +162,23 @@ def flatten_dict(d):
 ##
 
 
-def extract_one_dict(path, sample, job_id):
-
-    with open(path, 'rb') as f:
-        d = pickle.load(f)
-
-    df_options = pd.Series(flatten_dict(d['options'])).to_frame('option_value').T.assign(sample=sample, job_id=job_id)
-    df_metrics = pd.Series(flatten_dict(d['metrics'])).to_frame('metric_value').T.assign(sample=sample, job_id=job_id)
-
-    return df_options, df_metrics
-
-
-##
-
-
-def format_results(path_results):
-
-    options = []
-    metrics = []
-
-    for folder, _, files in os.walk(path_results):
-        for file in files:
-            sample = folder.split('/')[-1]
-            job_id = file.split('_')[0]
-            try:
-                df_options, df_metrics = extract_one_dict(os.path.join(folder, file), sample, job_id)
-                options.append(df_options)
-                metrics.append(df_metrics)
-            except:
-                pass
-
-    df_metrics = pd.concat(metrics).set_index(['job_id', 'sample'])
-    df_options = pd.concat(options).set_index(['job_id', 'sample'])
-    metrics = df_metrics.columns
-    options = df_options.columns
-
-    df = df_metrics.join(df_options).reset_index()
+def format_tuning(path_tuning):
+    """
+    Format tuning dataframe.
+    """
+    
+    assert os.path.exists(path_tuning)
+    options = pd.read_csv(os.path.join(path_tuning, 'all_options_final.csv'))
+    metrics = pd.read_csv(os.path.join(path_tuning, 'all_metrics_final.csv'))
+    df = pd.merge(
+        options.pivot(index=['sample', 'job_id'], values='value', columns='option').reset_index(),
+        metrics.pivot(index=['sample', 'job_id'], values='value', columns='metric').reset_index(),
+        on=['sample', 'job_id']
+    )
+    options = options['option'].unique().tolist()
+    metrics = metrics['metric'].unique().tolist()
 
     return df, metrics, options
-
 
 
 ##
