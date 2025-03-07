@@ -94,13 +94,10 @@ def genotype_MiTo_smooth(AD, DP, t_prob=.7, t_vanilla=0, min_AD=2, min_cell_prev
                 layers={'AD':csr_matrix(AD_sample), 'site_coverage':csr_matrix(DP)},
                 uns={'scLT_system':'MAESTER'}
             )
-            w = np.nanmedian(np.where(afm_.X.A>0, afm_.X.A, np.nan), axis=0)
             compute_distances(
                 afm_, 
-                metric='jaccard', 
                 bin_method='vanilla', 
                 binarization_kwargs={'min_AD':1, 't_vanilla':0}, # Loose genotyping.
-                weights=w,
                 verbose=False
             )
             L.append(afm_.obsp['distances'].A)
@@ -119,14 +116,11 @@ def genotype_MiTo_smooth(AD, DP, t_prob=.7, t_vanilla=0, min_AD=2, min_cell_prev
             layers={'AD':csr_matrix(AD), 'site_coverage':csr_matrix(DP)},
             uns={'scLT_system':'MAESTER'}
         )
-        w = np.nanmean(np.where(afm_.X.A>0, afm_.X.A, np.nan), axis=0)
         compute_distances(
             afm_, 
-            metric='jaccard', 
             bin_method='MiTo', 
             binarization_kwargs={'min_AD':min_AD, 't_vanilla':t_vanilla, 't_prob':t_prob, 'min_cell_prevalence':min_cell_prevalence},
             verbose=True,
-            weights=w
         )
         logging.info(f'Compute kNN graph for smoothing')
         index, _, _ = kNN_graph(D=afm_.obsp['distances'].A, k=k, from_distances=True)
