@@ -1,5 +1,5 @@
 """
-Dimensionality reduction utils to compress (pre-filtered) AFMs.
+Dimensionality reduction utils to reduce a (pre-filtered) AFMs.
 """
 
 import numpy as np
