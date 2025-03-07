@@ -20,6 +20,12 @@ import scanpy as sc
 ##
 
 
+path_assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
+
+
+##
+
+
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
@@ -162,45 +168,134 @@ def flatten_dict(d):
 ##
 
 
-def extract_one_dict(path, sample, job_id):
+def format_tuning(path_tuning):
+    """
+    Format tuning dataframe.
+    """
 
-    with open(path, 'rb') as f:
-        d = pickle.load(f)
+    assert os.path.exists(path_tuning)
+    options = pd.read_csv(os.path.join(path_tuning, 'all_options_final.csv'))
+    metrics = pd.read_csv(os.path.join(path_tuning, 'all_metrics_final.csv'))
+    df = pd.merge(
+        options.pivot(index=['sample', 'job_id'], values='value', columns='option').reset_index(),
+        metrics.pivot(index=['sample', 'job_id'], values='value', columns='metric').reset_index(),
+        on=['sample', 'job_id']
+    )
+    options = options['option'].unique().tolist()
+    metrics = metrics['metric'].unique().tolist()
 
-    df_options = pd.Series(flatten_dict(d['options'])).to_frame('option_value').T.assign(sample=sample, job_id=job_id)
-    df_metrics = pd.Series(flatten_dict(d['metrics'])).to_frame('metric_value').T.assign(sample=sample, job_id=job_id)
-
-    return df_options, df_metrics
+    return df, metrics, options
 
 
 ##
 
 
-def format_results(path_results):
+def extract_kwargs(args, only_tree=False):
+    """
+    Extract preprocessing parameters from CLI and tuning information. 
+    """
+    
+    path_tuning = args.path_tuning if hasattr(args, 'path_tuning') else None
 
-    options = []
-    metrics = []
+    if path_tuning is not None and args.job_id is not None:
+        
+        path_options = os.path.join(path_tuning, 'all_options_final.csv')
+        if os.path.exists(path_options):
+            
+            df_options = pd.read_csv(path_options).loc[lambda x: x['job_id'] == args.job_id]
+            d = { k:v for k,v in zip(df_options['option'],df_options['value']) }
 
-    for folder, _, files in os.walk(path_results):
-        for file in files:
-            sample = folder.split('/')[-1]
-            job_id = file.split('_')[0]
-            try:
-                df_options, df_metrics = extract_one_dict(os.path.join(folder, file), sample, job_id)
-                options.append(df_options)
-                metrics.append(df_metrics)
-            except:
-                pass
+            if not only_tree:
 
-    df_metrics = pd.concat(metrics).set_index(['job_id', 'sample'])
-    df_options = pd.concat(options).set_index(['job_id', 'sample'])
-    metrics = df_metrics.columns
-    options = df_options.columns
+                cell_filter = d['cell_filter']
+                min_cell_number = int(d['min_cell_number'])
+                lineage_column = d['lineage_column']
+                filtering = d['filtering']
+                bin_method = d['bin_method']
+                min_n_var = int(d['min_n_var'])
+                kwargs = {
+                    'min_cell_number' : min_cell_number,
+                    'lineage_column' : lineage_column,
+                    'filtering' : filtering,
+                    'bin_method' : bin_method,
+                    'min_n_var' : min_n_var,
+                    'path_dbSNP' : args.path_dbSNP, 
+                    'path_REDIdb' : args.path_REDIdb,
+                    'ncores' : args.ncores
+                }
+                filtering_kwargs = {
+                    'min_cov' : int(d['min_cov']),
+                    'min_var_quality': int(d['min_var_quality']),
+                    'min_frac_negative' : float(d['min_frac_negative']),
+                    'min_n_positive' : int(d['min_n_positive']),
+                    'af_confident_detection' : float(d['af_confident_detection']),
+                    'min_n_confidently_detected' : int(d['min_n_confidently_detected']),
+                    'min_mean_AD_in_positives' : float(d['min_mean_AD_in_positives']),
+                    'min_mean_DP_in_positives' : float(d['min_mean_DP_in_positives']) 
+                }
+                binarization_kwargs = {
+                    't_prob' : float(d['t_prob']), 
+                    't_vanilla' : float(d['t_vanilla']),
+                    'min_AD' : int(d['min_AD']),
+                    'min_cell_prevalence' : float(d['min_cell_prevalence']),
+                    'k' : int(d['k']), 
+                    'gamma' :  float(d['gamma']), 
+                    'resample' : False
+                }
+                tree_kwargs = {'solver':d['solver'], 'metric':d['metric']}
+            
+            else:
 
-    df = df_metrics.join(df_options).reset_index()
+                cell_filter = None; kwargs = None; 
+                filtering_kwargs = None; binarization_kwargs = None
+                tree_kwargs = {'solver':d['solver'], 'metric':d['metric']}
 
-    return df, metrics, options
+        else:
+            raise ValueError(f'{path_options} does not exists!')
 
+    else:
+
+        if not only_tree:
+
+            cell_filter = args.cell_filter
+            kwargs = {
+                'min_cell_number' : args.min_cell_number,
+                'lineage_column' : args.lineage_column,
+                'filtering' : args.filtering,
+                'bin_method' : args.bin_method,
+                'min_n_var' : args.min_n_var,
+                'path_dbSNP' : args.path_dbSNP, 
+                'path_REDIdb' : args.path_REDIdb,
+                'ncores' : args.ncores
+            }
+            filtering_kwargs = {
+                'min_cov' : args.min_cov,
+                'min_var_quality': args.min_var_quality,
+                'min_frac_negative' : args.min_frac_negative,
+                'min_n_positive' : args.min_n_positive,
+                'af_confident_detection' : args.af_confident_detection,
+                'min_n_confidently_detected' : args.min_n_confidently_detected,
+                'min_mean_AD_in_positives' : args.min_mean_AD_in_positives,
+                'min_mean_DP_in_positives' : args.min_mean_DP_in_positives 
+            }
+            binarization_kwargs = {
+                't_prob' : args.t_prob, 
+                't_vanilla' : args.t_vanilla,
+                'min_AD' : args.min_AD,
+                'min_cell_prevalence' : args.min_cell_prevalence,
+                'k' : args.k, 
+                'gamma' : args.gamma, 
+                'resample' : False
+            }
+            tree_kwargs = {'solver':args.solver, 'metric':args.metric}
+        
+        else:
+
+            cell_filter = None; kwargs = None; 
+            filtering_kwargs = None; binarization_kwargs = None
+            tree_kwargs = {'solver':args.solver, 'metric':args.metric}
+
+    return cell_filter, kwargs, filtering_kwargs, binarization_kwargs, tree_kwargs
 
 
 ##
@@ -227,6 +322,23 @@ def rank_items(df, groupings, metrics, weights, metric_annot):
     df_agg = df_agg.sort_values('Overall score', ascending=False)
 
     return df_agg
+
+
+##
+
+
+def load_mut_spectrum_ref():
+    df = pd.read_csv(os.path.join(path_assets, 'weng2024_mut_spectrum_ref.csv'), index_col=0)
+    return df
+
+
+##
+
+
+def load_mt_gene_annot():
+    df = pd.read_csv(os.path.join(path_assets, 'formatted_table_wobble.csv'), index_col=0)
+    df['mut'] = df['Position'].astype(str) + '_' + df['Reference'] + '>' + df['Variant']
+    return df
 
 
 ##

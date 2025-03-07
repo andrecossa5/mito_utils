@@ -442,34 +442,33 @@ def compute_lineage_biases(afm, lineage_column, target_lineage, bin_method='MiTo
     if lineage_column not in afm.obs.columns:
         raise ValueError(f'{lineage_column} not present in cell metadata!')
         
-    n = afm.shape[0]
     muts = afm.var_names
-
     prevalences_array = np.zeros(muts.size)
     target_ratio_array = np.zeros(muts.size)
     oddsratio_array = np.zeros(muts.size)
     pvals = np.zeros(muts.size)
+
     if 'bin' not in afm.layers:
         call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    G = afm.layers['bin'].A.copy()
 
     # Here we go
+    G = afm.layers['bin'].A.copy()
     for i in range(muts.size):
 
         test_mut = G[:,i] == 1
         test_lineage = afm.obs[lineage_column] == target_lineage
-        mut_size = test_mut.sum()
-        mut_lineage_size = (test_mut & test_lineage).sum()
-        prevalences_array[i] = mut_lineage_size / test_lineage.sum()
-        target_ratio = mut_lineage_size / mut_size
-        target_ratio_array[i] = target_ratio
-        other_mut_lineage_size = (~test_mut & test_lineage).sum()
+        n_mut_lineage = np.sum(test_mut & test_lineage)
+        n_mut_no_lineage = np.sum(test_mut & ~test_lineage)
+        n_no_mut_lineage = np.sum(~test_mut & test_lineage)
+        n_no_mut_no_lineage = np.sum(~test_mut & ~test_lineage)
+        prevalences_array[i] = n_mut_lineage / test_lineage.sum()
+        target_ratio_array[i] = n_mut_lineage / test_mut.sum()
 
         # Fisher
         oddsratio, pvalue = fisher_exact(
             [
-                [mut_lineage_size, mut_size - mut_lineage_size],
-                [other_mut_lineage_size, n - mut_size - other_mut_lineage_size],
+                [n_mut_lineage, n_mut_no_lineage],
+                [n_no_mut_lineage, n_no_mut_no_lineage], 
             ],
             alternative='greater',
         )
@@ -533,293 +532,48 @@ def filter_GT_enriched(afm, lineage_column=None, fdr_treshold=.1, n_enriched_gro
 ##
 
 
-# ############################### Deprecated filters
-# 
-# def filter_ludwig2019(afm, mean_af=0.5, min_var_quality=20):
-#     """
-#     Filter variants based on fixed tresholds adopted in Ludwig et al., 2019, 
-#     in the experiment without ATAC-seq reference, Fig.7.
-#     """
-#     test_vars_het = np.mean(afm.X, axis=0) >= mean_af                               # high average AF variants
-#     test_vars_qual = np.mean(afm.layers['quality'], axis=0) >= min_var_quality      # high average quality variants
-#     test_vars = test_vars_het & test_vars_qual
-#     filtered = afm[:, test_vars].copy()
-#     filtered = filter_sites(filtered)
-# 
-#     return filtered
-# 
-# 
-# def z_test_vars_into_bins(delta, alpha=0.05):
-#     """
-#     Perform a z-test on each deltaBIC value within a bin.
-#     """
-#     delta = delta.loc[lambda x: ~x.isna()]
-#     z_scores = ( delta-delta.mean() ) / ( delta.std() / (delta.shape[0] ** 0.5) )
-#     critical_z_value = stats.norm.ppf(1-alpha)
-#     variants = z_scores.loc[lambda x: x>critical_z_value].index.to_list()
-# 
-#     return variants
-#     
-# 
-# ##
-# 
-# 
-# def calc_median_AF_in_positives(afm, candidates):
-# 
-#     median_af = []
-#     for x in candidates:
-#         idx = afm[:, x].X.toarray().flatten()>0
-#         median_af.append(np.median(afm[idx, x].X, axis=0)[0])
-# 
-#     return np.array(median_af)
-#     
-# 
-# ##
-# 
-# 
-# def filter_from_bins(df, afm, min_f, max_f, treshold_AF=.05, n_bins=10):
-#         
-#     bins = np.linspace(min_f, max_f, n_bins+1)
-#     df['bin'] = pd.cut(
-#         df['fr_pos_cells'], bins=bins, include_lowest=True, labels=False
-#     )
-#     var_l = df.groupby('bin').apply(lambda x: z_test_vars_into_bins(x['deltaBIC']))
-#     candidates = list(chain.from_iterable(var_l))
-#     test = calc_median_AF_in_positives(afm, candidates)>=treshold_AF
-#     filtered_candidates = pd.Series(candidates)[test].to_list()
-#     
-#     return filtered_candidates
-# 
-# 
-# ##
-# 
-# 
-# def filter_Mquad_optimized(afm, nproc=8, minDP=10, minAD=1, path_=None,
-#     split_t=.2, treshold_AF_high=.05, treshold_AF_low=.025, n_bins=10
-#     ):
-#     """
-#     Filter variants using the MQuad method, optimized version.
-#     """
-#     df, M, ad_vars = fit_MQuad_mixtures(
-#         afm, path_=path_, nproc=nproc, minDP=minDP, minAD=minAD, with_M=True, 
-#     )
-# 
-#     # Split into high and low
-#     df['fr_pos_cells'] = df['num_cells_nonzero_AD'] / afm.shape[0]
-#     df['fr_pos_cells'] = df['fr_pos_cells'].astype('float')
-#     df['deltaBIC'] = df['deltaBIC'].astype('float')
-# 
-#     # Get vars
-#     high_vars = filter_from_bins(
-#         df.query('fr_pos_cells>=@split_t').copy(), 
-#         afm, split_t, 1, treshold_AF=treshold_AF_high, n_bins=n_bins
-#     )
-#     low_vars = filter_from_bins(
-#         df.query('fr_pos_cells<@split_t').copy(), 
-#         afm, 0, split_t, treshold_AF=treshold_AF_low, n_bins=n_bins
-#     )
-# 
-#     # Subset matrix
-#     filtered = afm[:, high_vars+low_vars].copy()
-#     filtered = filter_sites(filtered) # Remove sites
-# 
-#     return filtered
-# 
-# 
-# ##
-# 
-# 
-# def filter_DADApy(afm):
-#     """
-#     Filter using DADApy.
-#     """
-#     return 'Not implemented yet...'
-# 
-#
+def moran_I(W, x, num_permutations=1000):
+
+    W = W / W.sum()
+    x_stdzd = (x-np.mean(x)) / np.std(x,ddof=0)
+    I_obs = x_stdzd.T @ W @ x_stdzd
+
+    # Perform permutation test
+    num_permutations = 100
+    permuted_Is = np.zeros(num_permutations)
+    for i in range(num_permutations):
+        x_perm = np.random.permutation(x_stdzd)
+        permuted_Is[i] = x_perm.T @ W @ x_perm
+    p_value = np.sum(permuted_Is >= I_obs) / num_permutations
+
+    return I_obs, p_value
+
+
 ##
-#
-#  
-# def filter_density(afm, density=0.1, t=.01, steps=np.Inf):
-#     """
-#     Jointly filter cells and variants based on the iterative filtering algorithm 
-#     adopted by Moravec et al., 2022.
-#     """
-# 
-#     # Check initial density not already above the target one
-#     X_bool = np.where(afm.X>=t, 1, 0)
-#     d0 = X_bool.sum() / X_bool.size
-#     if d0 >= density:
-#         logging.info(f'Density is already more than the desired target: {d0}')
-#         return afm
-#         
-#     else:
-#         print(f'Initial density: {d0}')
-# 
-#     # Iteratively remove lowest density rows/cols, until desired density is reached
-#     densities = []
-#     i = 0
-#     while i < steps:
-# 
-#         rowsums = X_bool.sum(axis=1)
-#         colsums = X_bool.sum(axis=0)
-#         d = X_bool.sum() / X_bool.size
-#         densities.append(d)
-#         print(f'Step {i}: density {d:.2f}')
-# 
-#         if d >= density or (len(rowsums) == 0 or len(colsums) == 0):
-#             break
-# 
-#         rowmin = rowsums.min()
-#         colmin = colsums.min()
-#         if rowmin <= colmin:
-#             lowest_density_rows = np.where(rowsums == rowmin)[0]
-#             X_bool = X_bool[ [ i for i in range(X_bool.shape[0]) if i not in lowest_density_rows ], :]
-#             afm = afm[ [ i for i in range(afm.shape[0]) if i not in lowest_density_rows ], :].copy()
-#         else:
-#             lowest_density_cols = np.where(colsums == colmin)[0]
-#             X_bool = X_bool[:, [ i for i in range(X_bool.shape[1]) if i not in lowest_density_cols ] ]
-#             afm = afm[:, [ i for i in range(afm.shape[1]) if i not in lowest_density_cols ] ].copy()
-#         i += 1
-# 
-#     afm = filter_sites(afm) 
-#     
-#     return afm
-# 
-# 
-# ##
-# 
-# 
-# def filter_baseline_old(afm):
-#     """
-#     Baseline filter, applied on all variants, before any method-specific solution.
-#     This is a very mild filter to exclude all variants that will be pretty much impossible
-#     to use by any method due to:
-#     * extremely low coverage at which the variant site have been observed across the population
-#     * extremely low quality at which the variant site have been observed across the population
-#     * Too less cells in which the variant have been detected with AF >1% 
-#     """
-#     # Test 1: variants whose site has been covered by nUMIs >= 10 (mean, over all cells)
-#     test_sites = pd.Series(
-#         np.mean(afm.uns['per_position_coverage'], axis=0) > 10,
-#         index=afm.uns['per_position_coverage'].columns
-#     )
-#     sites = test_sites[test_sites].index
-#     test_vars_site_coverage = (
-#         afm.var_names
-#         .map(lambda x: x.split('_')[0] in sites)
-#         .to_numpy(dtype=bool)
-#     )
-#     # Test 2-4: 
-#     # variants with quality >= 30 (mean, over all cells); 
-#     # variants seen in at least 2 cells;
-#     # variants with AF>0.01 in at least 2 cells;
-#     test_vars_quality = np.nanmean(afm.layers['quality'], axis=0) > 30
-#     test_vars_coverage = np.sum(afm.layers['coverage']>0, axis=0) > 2
-#     test_vars_AF = np.sum(afm.X > 0.01, axis=0) > 2
-# 
-#     # Filter vars and sites
-#     test_vars = test_vars_site_coverage & test_vars_quality & test_vars_coverage & test_vars_AF 
-#     filtered = afm[:, test_vars].copy()
-#     filtered = filter_sites(filtered)
-# 
-#     return filtered
-# 
-# 
-# ##
-# 
-# 
-# def filter_seurat(afm, nbins=50, n_top=1000, log=True):
-#     """
-#     Filter with the scanpy/seurat flavour, readapted from scanpy.
-#     """
-#     # Calc stats
-#     X = afm.X
-#     X[np.isnan(X)] = 0
-#     mean = X.mean(axis=0)
-#     var = X.var(axis=0)
-#     dispersion = np.full(X.shape[1], np.nan)
-#     idx_valid = (mean > 0.0) & (var > 0.0)
-#     dispersion[idx_valid] = var[idx_valid] / mean[idx_valid] 
-# 
-#     # Optional, put them in the log space
-#     if log:
-#         mean = np.log1p(mean) 
-#         dispersion = np.log(dispersion)
-#     
-#     # Bin dispersion values, subtract from each value the bin dispersion mean and divide by the bin std
-#     df = pd.DataFrame({"log_dispersion": dispersion, "bin": pd.cut(mean, bins=nbins)})
-#     log_disp_groups = df.groupby("bin")["log_dispersion"]
-#     log_disp_mean = log_disp_groups.mean()
-#     log_disp_std = log_disp_groups.std(ddof=1)
-#     log_disp_zscore = (
-#         df["log_dispersion"].values - log_disp_mean.loc[df["bin"]].values
-#     ) / log_disp_std.loc[df["bin"]].values
-#     log_disp_zscore[np.isnan(log_disp_zscore)] = 0.0
-# 
-#     # Rank, order and slice first n. Subset AFM
-#     hvf_rank = np.full(X.shape[1], -1, dtype=int)
-#     ords = np.argsort(log_disp_zscore)[::-1]
-#     hvf_rank[ords[:n_top]] = range(n_top)
-#     select = np.where(hvf_rank != -1)[0]
-#     filtered = afm[:, select].copy()
-#     filtered = filter_sites(filtered) # Remove sites
-# 
-#     return filtered
-# 
-# 
-# ##
-# 
-# 
-# To much problem with sc-misc installation
-# def filter_pegasus(afm, span=0.02, n=1000):
-#     """
-#     Filter with the method implemented in pegasus.
-#     """
-#     # Get means and vars
-#     X = afm.X
-#     X[np.isnan(X)] = 0
-#     mean = X.mean(axis=0)
-#     var = X.var(axis=0)
-# 
-#     # Fit var to the mean with loess regression, readjusting the span
-#     span_value = span
-#     while True:
-#         lobj = fit_loess(mean, var, span=span_value, degree=2)
-#         if lobj is not None:
-#             break
-#         span_value += 0.01
-# 
-#     # Create two ranks
-#     rank1 = np.zeros(mean.size, dtype=int)
-#     rank2 = np.zeros(mean.size, dtype=int)
-#     delta = var - lobj.outputs.fitted_values          # obs variance - fitted one
-#     fc = var / lobj.outputs.fitted_values             # obs variance / fitted one
-#     rank1[np.argsort(delta)[::-1]] = range(mean.size) # Rank in desc order
-#     rank2[np.argsort(fc)[::-1]] = range(mean.size)
-# 
-#     # Rank according to the sum of the two ranks, and filter AFM.
-#     hvf_rank = rank1 + rank2
-#     hvf_index = np.zeros(mean.size, dtype=bool)
-#     hvf_index[np.argsort(hvf_rank)[:n]] = True
-#     filtered = afm[:, hvf_index].copy()
-#     filtered = filter_sites(filtered)        # Remove sites
-# 
-#     return filtered
-# 
-# 
-# ##
-# 
-# 
-# def filter_sites(afm):
-#     """
-#     Filter sites info belonging only to selected AFM variants.
-#     """
-#     cells = afm.obs_names
-#     sites_retained = afm.var_names.map(lambda x: x.split('_')[0]).unique()
-#     afm.uns['per_position_coverage'] = afm.uns['per_position_coverage'].loc[cells, sites_retained]
-#     afm.uns['per_position_quality'] = afm.uns['per_position_quality'].loc[cells, sites_retained]
-# 
-#     return afm
 
 
-###############################
+def filter_variant_moransI(afm, num_permutations=100, pval_treshold=.01):
+    """
+    Filter MT-SNVs if not significantnly auto-correlated.
+    """
+    
+    assert 'distances' in afm.obsp
+    W = 1-afm.obsp['distances'].A
+
+    I = []
+    P = []
+    for var in afm.var_names:
+        i, p = moran_I(W, afm[:,var].X.A.flatten(), num_permutations=num_permutations)
+        I.append(i)
+        P.append(p)
+    
+    afm.var['Moran I '] = I
+    afm.var['Moran I pvalue'] = P
+
+    var_to_retain = afm[:,afm.var['Moran I pvalue']<=pval_treshold].var_names
+    afm = afm[:,var_to_retain].copy()
+
+    return afm
+
+
+##

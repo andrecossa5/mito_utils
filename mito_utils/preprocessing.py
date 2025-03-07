@@ -7,6 +7,7 @@ from igraph import Graph
 from mito_utils.filters import *
 from mito_utils.make_afm import *
 from mito_utils.distances import *
+from mito_utils.kNN import *
 from mito_utils.phylo import *
 
 
@@ -178,16 +179,13 @@ def compute_connectivity_metrics(X):
 ##
 
 
-def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
-                            bin_method='MiTo', binarization_kwargs={}, tree_kwargs={}):
+def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1, k=10, tree_kwargs={}):
     """
     Compute additional metrics on selected MT-SNVs feature space.
     """
 
-    # Last time, to ensure consistency
-    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    
     d = {}
+    assert 'bin' in afm.layers    
     X_bin = afm.layers['bin'].A.copy()
 
     # n cells and vars
@@ -228,7 +226,7 @@ def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
     # Spatial metrics
     tree = None
     if spatial_metrics:
-        
+
         # Cell connectedness
         average_degree, average_path_length, transitivity, proportion_largest_component = compute_connectivity_metrics(X_bin)
         d['average_degree'] = average_degree
@@ -237,7 +235,7 @@ def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
         d['proportion_largest_component'] = proportion_largest_component
 
         # Baseline tree internal nodes mutations support
-        tree = build_tree(afm, bin_method=bin_method, binarization_kwargs=binarization_kwargs, ncores=ncores, **tree_kwargs)
+        tree = build_tree(afm, precomputed=True, **tree_kwargs)
 
     # To .uns
     afm.uns['dataset_metrics'].update(d)
@@ -250,10 +248,10 @@ def compute_metrics_filtered(afm, spatial_metrics=True, ncores=1,
 
 def filter_afm(
     afm, lineage_column=None, min_cell_number=0, cells=None,
-    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None,
+    filtering='MiTo', filtering_kwargs={}, max_AD_counts=2, variants=None, min_n_var=1,
     fit_mixtures=False, only_positive_deltaBIC=False, path_dbSNP=None, path_REDIdb=None, 
-    compute_enrichment=False, bin_method='MiTo', binarization_kwargs={}, ncores=8,
-    spatial_metrics=False, tree_kwargs={}, return_tree=False
+    compute_enrichment=False, bin_method='MiTo', binarization_kwargs={}, metric='weighted_jaccard',
+    ncores=8, spatial_metrics=False, tree_kwargs={}, return_tree=False
     ):
     """
     
@@ -325,6 +323,8 @@ def filter_afm(
         Cell filter. The minimum AF threshold at which at least one of the filtered MT-SNVs needs to be detected in a cell to retain the cell in the final dataset. It may be passed as a key-value pair in `filtering_kwargs`. Default is `0.01`.
     variants : list, optional
         Pre-computed list of variants to subset. Default is `None`.
+    min_n_var : int, optional
+        N of MT-SNVs variants for a cell to be included in the downstream analysis.
     spatial_metrics : bool, optional
         If `True`, compute a list of "spatial" metrics for retained MT-SNVs, including [details missing]. Default is `False`.
     tree_kwargs : dict, optional
@@ -345,8 +345,12 @@ def filter_afm(
         Binarization strategy used for i) compute the final dataset statistics (i.e., mutation number, connectivity ecc) and ii) lineage enrichment. Default is `MiTo`
     binarization_kwargs : dict, optional
         Binarization strategy **kwargs (see mito_utils.distances.call_genotypes). Default is `{}`
-    return_tree : boll, optional
-        Wheter to return the tree usen in spatial metrics.
+    return_tree : bool, optional
+        Whether to return the tree usen in spatial metrics.
+    k : int, optional
+        k for kNN search. Default: 10
+    metric : str, optional
+        Distance metric for cell-cell similarity computations. Default: jaccard
 
     Returns
     -------
@@ -371,11 +375,13 @@ def filter_afm(
     # Cells from <lineage_column> with at least min_cell_number cells, if necessary
     if min_cell_number>0 and lineage_column is not None:
         afm = filter_cell_clones(afm, column=lineage_column, min_cell_number=min_cell_number)
+        annotate_vars(afm, overwrite=True)
        
     # Baseline filter
     afm = filter_baseline(afm)
     logging.info(f'afm after baseline filter: n cells={afm.shape[0]}, n features={afm.shape[1]}.')
     
+    # Custom filters
     if filtering in filtering_options:
 
         if filtering == 'baseline':
@@ -435,33 +441,36 @@ def filter_afm(
             afm = afm[:,variants].copy()
 
 
-    # Filter cells with at least one muts above af_confident_detection
+    # Genotype cells, and filter the one with less than min_n_var mutations
     call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>0,:]
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_n_var,:].copy()
+    logging.info(f'Retain cells with at least {min_n_var} MT-SNVs: {afm.shape[0]}')
  
-    # Final dataset and filtered MT-SNVs metrics to evalutate the selected MT-SNVs space quality
-    logging.info(f'Filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
-    if afm.shape[1] == 0:
-        raise ValueError('No variant selected! Change filtering method!!')
- 
-    # Bimodal mixture modelling: deltaBIC (MQuad-like)
+    # Bimodal mixture modelling: deltaBIC (MQuad-like) and max AD in at least one cell (Weng et al., 2024)
     if fit_mixtures:
         afm.var = afm.var.join(fit_MQuad_mixtures(afm, ncores=ncores).dropna()[['deltaBIC']])
- 
-    # Last (optional filters):
-    if fit_mixtures and only_positive_deltaBIC:
-        afm = afm[:,afm.var['deltaBIC']>0].copy()
+        if only_positive_deltaBIC:
+            afm = afm[:,afm.var['deltaBIC']>0].copy()
+            logging.info(f'Remove MT-SNVs with deltaBIC<0')
     if max_AD_counts>1:
         afm = afm[:,np.max(afm.layers['AD'].A, axis=0)>=max_AD_counts].copy()
- 
-    # Final fixes
-    call_genotypes(afm, bin_method=bin_method, **binarization_kwargs)
-    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>0,:]
-    logging.info(f'Last optional filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
+        logging.info(f'Remove MT-SNVs with no +cells having at least {max_AD_counts} AD counts')
+
+    # Compute cell-cell distances and filter variants significantly auto-correlated.
+    compute_distances(afm, precomputed=True, metric=metric, ncores=ncores)
+    afm = filter_variant_moransI(afm)
+    logging.info(f'Filter only MT-SNVs with significant spatial auto-correlation (i.e., Moran I statistics).')
     
+    # Final fixes
+    afm = afm[np.sum(afm.layers['bin'].A>0, axis=1)>=min_n_var,:].copy()
+    annotate_vars(afm, overwrite=True)
+    logging.info(f'Retain cells with at least {min_n_var} MT-SNVs: {afm.shape[0]}')
+    logging.info(f'Last (optional) filters: filtered afm contains {afm.shape[0]} cells and {afm.shape[1]} MT-SNVs.')
+    
+    ##
+
     # Lineage bias
     if lineage_column in afm.obs.columns and compute_enrichment:
-        
         logging.info(f'Compute MT-SNVs enrichment for {lineage_column} categories')
         lineages = afm.obs[lineage_column].dropna().unique()
         for target_lineage in lineages:
@@ -470,14 +479,12 @@ def filter_afm(
             afm.var[f'FDR_{target_lineage}'] = res['FDR']
             afm.var[f'odds_ratio_{target_lineage}'] = res['odds_ratio']
 
-    # Last dataset stats 
-    logging.info(f'Add last metrics')
+    # Compute final metrics
+    logging.info(f'Compute last (filtered) statistics.')
     tree = compute_metrics_filtered(
         afm, 
         spatial_metrics=spatial_metrics, 
         tree_kwargs=tree_kwargs,
-        bin_method=bin_method, 
-        binarization_kwargs=binarization_kwargs,
         ncores=ncores
     )
 
@@ -492,6 +499,7 @@ def filter_afm(
         'spatial_metrics' : spatial_metrics,
         'n_dbSNP' : n_dbSNP,
         'n_REDIdb' : n_REDIdb,
+        'min_n_var' : min_n_var
     }
     afm.uns['char_filter'].update(filtering_kwargs)
     
