@@ -34,7 +34,6 @@ _solver_kwargs = {
     'shared_muts' : {},
     'greedy' : {},
     'max_cut' : {}
-
 }
 
 
@@ -75,7 +74,7 @@ def _initialize_CassiopeiaTree_kwargs(afm, distance_key, min_n_positive_cells, m
 
 def build_tree(
     afm, precomputed=False, distance_key='distances', metric='jaccard', 
-    bin_method='MiTo', solver='UPMGA', ncores=1, min_n_positive_cells=2, filter_muts=True,
+    bin_method='MiTo', solver='UPMGA', ncores=1, min_n_positive_cells=2, filter_muts=False,
     max_frac_positive=.95, binarization_kwargs={}, solver_kwargs={},
     ):
     """
@@ -287,173 +286,6 @@ def RI(tree):
 ##
 
 
-def _resolve_node_assignment(x, times_d):
-    nodes = x.loc[lambda x: x==1]
-    if nodes.size>0:
-        nodes =  nodes.index
-        assigned_node = nodes[np.argmax([ times_d[node] for node in nodes ])]
-    else:
-        assigned_node = 'Unassigned'
-    return assigned_node
-
-
-##
-
-
-def MiToTreeAnnotator(tree, n_clones=None):
-    """
-    Cut a tree into discrete MT-clones, supported by one or more MT-SNV.
-    1) Assign each variant to an internal node (lowest p-value among clades, Fisher's exact test)
-    2) Cluster MT-SNVs into an optimal number of cluster (highest silhouette score, elbow method, [2, 2/3 * MT-SNVs] mutational clusters tried)
-    3) Collapse internal nodes according to MT-SNVs clusters into discrete clones
-    4) Update tree.cell meta with clone annotation and outputs each final clone-MT-SNVs assignment.   
-    """
-
-    # Get clades binary encodings
-    clades = get_clades(tree, with_root=False, with_singletons=False)
-    df_clades = pd.DataFrame(
-        np.array([[ x in clades[clade] for x in tree.leaves ] for clade in clades ]).astype(int),
-        index=clades.keys(),
-        columns=tree.leaves
-    ).T.loc[tree.layers['transformed'].index]
-
-    # Assign all muts to an internal node
-    muts = tree.layers['transformed'].columns
-    n = len(tree.leaves)
-
-    P = {}
-    logging.info('Assign variants to internal nodes...')
-    for lineage_column in df_clades:
-
-        target_ratio_array = np.zeros(muts.size)
-        oddsratio_array = np.zeros(muts.size)
-        pvals = np.zeros(muts.size)
-
-        for i,mut in enumerate(muts):
-            test_mut = tree.layers['transformed'].values[:,i] == 1
-            test_lineage = df_clades[lineage_column].values == 1
-            mut_size = test_mut.sum()
-            mut_lineage_size = (test_mut & test_lineage).sum()
-            target_ratio = mut_lineage_size / mut_size
-            target_ratio_array[i] = target_ratio
-            other_mut_lineage_size = (~test_mut & test_lineage).sum()
-
-            # Fisher
-            oddsratio, pvalue = fisher_exact(
-                [
-                    [mut_lineage_size, mut_size - mut_lineage_size],
-                    [other_mut_lineage_size, n - other_mut_lineage_size],       # NB: REVISE THIS
-                ],
-                alternative='greater',
-            )
-            oddsratio_array[i] = oddsratio
-            pvals[i] = pvalue
-
-        # FDR
-        pvals = multipletests(pvals, alpha=.05, method="fdr_bh")[1]
-        P[lineage_column] = pvals
-
-    df_muts = pd.DataFrame(P, index=muts)
-
-    # Extract results for plotting
-    node_variant_map = {}
-    for mut in df_muts.index:
-        candidate = df_muts.loc[mut,:].sort_values().index[1]
-        node_variant_map[candidate] = mut
-    
-    # Add info to as node attributes
-    mut_nodes = list(node_variant_map.keys())
-    for node in tree.internal_nodes:
-        if node in mut_nodes:
-            tree.set_attribute(node, 'mut', True)
-        else:
-            tree.set_attribute(node, 'mut', False)
-    node_assignment = pd.Series(node_variant_map).to_frame('mut')
-    
-    mutation_order = []
-    for node in tree.depth_first_traverse_nodes():
-        if node in node_assignment.index:
-            mutation_order.append(node_assignment.loc[node, 'mut'])
-
-    # Cluster MT-SNVs into an optimal number of cluster, k
-    X = tree.layers['transformed'].values.T
-    D = pairwise_distances(X, metric='jaccard')
-    L = linkage(D, method='ward')
-
-    # idx = leaves_list(L) 
-    # ax.imshow(D[np.ix_(idx,idx)], cmap='viridis_r')
-    # fig, ax = plt.subplots(figsize=(5,5))
-    # format_ax(ax=ax, yticks=tree.character_matrix.columns[idx], xticks=[], title='MT-SNVs clustering')
-    # fig.tight_layout()
-    # plt.show()
-
-    # Determine optimal number of MT-SNVs clusters
-    maxK = D.shape[0] if D.shape[0] <=25 else round( D.shape[0] * (2/3) )
-    if n_clones is None:
-        measures = []
-        n_clones = list(range(2, maxK+1))
-        for k in n_clones:
-            np.random.seed(1234)
-            labels = fcluster(L, k, criterion='maxclust')
-            silhouette_avg = silhouette_score(D, labels, metric='precomputed')
-            measures.append(silhouette_avg)
-        n_clones = n_clones[np.argmax(measures)]
-        logging.info(f'Optimal mut_clusters: {n_clones}')
-
-        # fig, ax = plt.subplots(figsize=(4.5,4.5))
-        # ax.plot(measures, 'ko')
-        # format_ax(ax=ax, xlabel='k MT-SNVs cluster', ylabel='Average silhouette coefficient', title='MT-SNVs clustering')
-        # ax.axvline(x=np.argmax(measures), linestyle='--', c='r')
-        # fig.tight_layout()
-        # plt.show()
-
-    else:
-        logging.info(f'Target mut_clusters: {n_clones}')
-
-    # Collapse internal nodes
-    distances = L[:,2]
-    merge_index = len(L) - (n_clones - 1)
-    threshold = distances[merge_index]
-    epsilon = 1e-10
-    threshold += epsilon
-    np.random.seed(1234)
-    mut_clusters = fcluster(L, t=threshold, criterion='distance')
-
-    logging.info(f'Final mut_clusters: {np.unique(mut_clusters).size}')
-    
-    mut_map = { mut : cluster for mut, cluster in zip(tree.character_matrix.columns, mut_clusters)}
-    node_assignment['mut_cluster'] = node_assignment['mut'].map(mut_map)
-    node_assignment['MT_clone'] = node_assignment['mut_cluster'].map(lambda x: f'MiTo_{x}')
-
-    # Annotate tree.cell meta
-    df_clades = df_clades.loc[:,node_assignment.index]
-    times_d = { k:v for k,v in tree.get_times().items() if k in node_assignment.index }
-    resolved_nodes = {}
-    for cell in df_clades.index:
-        x = df_clades.loc[cell,:]
-        resolved_nodes[cell] = _resolve_node_assignment(x, times_d)
-    
-    df_clades = pd.Series(resolved_nodes).to_frame('clade')
-    df_clades['MT_clone'] = df_clades['clade'].map(node_assignment['MT_clone'].to_dict())
-    tree.cell_meta['MT_clone'] = df_clades.loc[tree.cell_meta.index, 'MT_clone']
-    # tree.cell_meta['MT_clone'] = np.where(~tree.cell_meta['MT_clone'].isna(), tree.cell_meta['MT_clone'], 'Undefined')
-    n_clones = tree.cell_meta['MT_clone'].unique().size
-    
-    logging.info(f'Final MT_clones: {n_clones}')
-
-    clone_muts = {
-        clone : ';'.join(node_assignment.loc[node_assignment['MT_clone']==clone, 'mut'].to_list())
-        for clone in node_assignment['MT_clone'].unique()
-    }
-    tree.cell_meta['clone_muts'] = tree.cell_meta['MT_clone'].map(clone_muts)
-
-
-    return tree, mut_nodes, mutation_order
-
-
-##
-
-
 def get_supports(tree):
 
     L = []
@@ -484,10 +316,9 @@ def get_internal_node_stats(tree):
         }, 
         index=tree.internal_nodes
     )
-    try:
-        df['mut'] = [ tree.get_attribute(node, 'mut') for node in tree.internal_nodes ]
-    except:
-        pass
+    if 'lca' in tree.cell_meta:
+        clades = tree.cell_meta['lca'].loc[lambda x: ~x.isna()].unique()
+        df['mut_clade'] = [ True if node in clades else False for node in tree.internal_nodes ]
     
     return df 
 
